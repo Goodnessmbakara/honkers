@@ -154,8 +154,9 @@ After the admin calls `resolve(outcome)`, a 24–48 hour window opens before set
 #### Option B — Multi-sig Resolution (M-of-N Admin Committee)
 Resolution requires M signatures from N trusted admins (e.g., 3-of-5). No single admin can resolve incorrectly without collaborators.
 
-- **Pros:** Immediate settlement (no waiting); addresses single-point-of-failure risk; easy to implement with Gnosis Safe or equivalent.
+- **Pros:** Immediate settlement (no waiting); addresses single-point-of-failure risk.
 - **Cons:** Still centralised; all signers could collude; doesn't help users who disagree with the outcome.
+- **Implementation note:** Aztec has no native multi-sig. Two buildable paths: (a) Custom Noir multi-sig account contract on L2 using AuthWit pattern for signature delegation. (b) L1 Gnosis Safe for oracle resolution on L1, bridging the result to Aztec L2 via portal messages.
 
 **[x] Combine with Option A (multi-sig initiates resolution, time-lock allows challenge)**
 
@@ -165,7 +166,7 @@ Resolution requires M signatures from N trusted admins (e.g., 3-of-5). No single
 Use UMA's dispute resolution system where anyone can dispute a resolution by posting a bond, and UMA token holders arbitrate.
 
 - **Pros:** Fully decentralised; battle-tested; aligns with Phase 3 roadmap.
-- **Cons:** Complex Aztec ↔ UMA cross-chain integration; not available for Phase 1.
+- **Cons:** Significant cross-chain engineering (~4-8 weeks); not available for Phase 1. Buildable path: UMA stays on Ethereum L1, resolution results are bridged to Aztec L2 via L1→L2 portal messages (see §3.3 Option C for details).
 
 **[ ] Adopt in Phase 3 as planned**
 
@@ -291,9 +292,9 @@ Notes are encrypted client-side and synced to a backend storage service (S3, IPF
 If note values can be rederived from the user's account key (seed phrase) without external storage, recovery is automatic — import your seed phrase, get all notes back.
 
 - **Pros:** Best UX; no backup files; same model as standard crypto wallets.
-- **Cons:** Requires Aztec to support deterministic note derivation (check Aztec v5 spec); may not be possible for all note types.
+- **Cons:** There is no "v5" — Aztec is on SDK v4.x (alpha-testnet). Current note discovery uses PXE **trial-decryption** of on-chain encrypted logs when an account is re-registered from `(secret, salt)` via `instantiateAccount`. This recovers all notes without manual backup, **but only if the user retains their account secret**. Full deterministic derivation of all note values from a single seed is not yet a documented Aztec primitive — check upstream roadmap.
 
-**[x] Investigate first — if Aztec v5 supports this, it supersedes all other options**
+**[x] Investigate first — if Aztec adds full deterministic note derivation, it supersedes other backup options. Current fallback: PXE re-registration + trial-decryption recovers notes from on-chain logs.**
 
 ---
 
@@ -432,7 +433,7 @@ At time of placing a bet, the user's PXE pre-generates a "claim authorisation no
 - **Pros:** Truly automatic even when user is offline; gasless for the user.
 - **Cons:** Complex cryptography; requires Aztec's note delegation to be mature; significant engineering effort.
 
-**[ ] Phase 3 feature — research Aztec note delegation in v5**
+**[ ] Phase 3 feature — research Aztec note delegation / AuthWit-based claim delegation as SDK matures**
 
 ---
 
@@ -517,38 +518,40 @@ Anyone can create a market by posting a bond. Bond is returned if market resolve
 
 **Recommended Note Types:**
 
+Notes in Aztec.nr use the `#[note]` macro, which auto-generates the note hash, nullifier, and randomness (nonce). You do **not** manually add a `nonce` field — the framework injects and manages it. Noir has no `String` type; use `Field` for hashes/IDs and store human-readable text off-chain (in the indexer DB, keyed by `market_id`).
+
+```noir
+#[note]
+struct CollateralNote {
+    owner: AztecAddress,       // private — owner of the funds
+    amount: Field,             // private — USDC amount (fixed-point, e.g. 1e6 scale)
+}
+
+#[note]
+struct ShareNote {
+    owner: AztecAddress,       // private — who holds the shares
+    market_id: Field,          // which market
+    side: bool,                // true = YES, false = NO
+    amount: Field,             // number of shares
+    entry_price: Field,        // price paid per share (for analytics, fixed-point)
+}
+
+#[note]
+struct WinningNote {
+    owner: AztecAddress,
+    market_id: Field,
+    amount: Field,             // USDC winnings
+    resolved_at: Field,        // block number or timestamp
+    // marketQuestion is stored off-chain in the indexer DB, looked up by market_id
+}
 ```
-CollateralNote {
-  owner: AztecAddress         // private — owner of the funds
-  amount: u64                 // private — USDC amount
-  nonce: Field                // prevents double-spend
-}
 
-ShareNote {
-  owner: AztecAddress         // private — who holds the shares
-  marketId: Field             // which market
-  side: bool                  // true = YES, false = NO
-  amount: u64                 // number of shares
-  entryPrice: u64             // price paid per share (for analytics)
-  nonce: Field
-}
-
-WinningNote {
-  owner: AztecAddress
-  marketId: Field
-  questionHash: Field         // hash of market question; full text from public indexer / IPFS
-  amount: u64                 // USDC winnings
-  resolvedAt: u64             // block timestamp
-  nonce: Field
-}
-```
-
-**Implementation note:** Prefer **fixed-width fields** in Noir (`Field`, `u64`). Store **question text** off-chain or in **public** market metadata; put **`questionHash` in notes** for integrity and cheaper circuits. UI resolves hash → text via your indexer API.
+**Implementation note:** `Field` is the native arithmetic type in Noir circuits — avoids range-check overhead vs `u64` for AMM/pricing math. Use `u64` only where you need explicit overflow protection at contract boundaries. Store **question text** off-chain in public market metadata; use `market_id` in notes to join with indexer. For integrity checking, a `question_hash: Field` can optionally be stored in the note if you need to verify the question hasn't been tampered with.
 
 **Options for double-spend prevention:**
 
 #### Option A — Nullifier-Based (Aztec Native)
-Each note has a nullifier derived from `hash(owner_secret, note_hash)`. When a note is spent, its nullifier is published. Attempting to spend again fails because the nullifier already exists.
+Each note has a nullifier derived from `hash(owner_secret, note_hash)`. When a note is spent, its nullifier is published. Attempting to spend again fails because the nullifier already exists. The `#[note]` macro generates the nullifier computation automatically.
 
 **[x] RECOMMENDED — this is the standard Aztec approach**
 
@@ -572,7 +575,12 @@ Standard Uniswap-style AMM.
 The academic gold standard for prediction market AMMs. Used by Augur and early Gnosis. Cost function: $C(q_{yes}, q_{no}) = b \cdot \ln(e^{q_{yes}/b} + e^{q_{no}/b})$
 
 - **Pros:** Market can reach 0 and 1; less slippage at extremes; well-studied; no LP impermanent loss (platform/creator is market maker).
-- **Cons:** Platform must subsidise losses (the "b" parameter represents maximum loss); harder to implement in Noir (requires `exp` and `ln` approximations); **constraint-heavy** — may exceed comfortable per-tx circuit budgets.
+- **Cons:** Platform must subsidise losses (the “b” parameter represents maximum loss); harder to implement in Noir (requires `exp` and `ln` approximations); **constraint-heavy** — may exceed comfortable per-tx circuit budgets.
+- **How to build `exp`/`ln` in Noir:** Noir has no floating-point or transcendental math. Three buildable approaches:
+  1. **Fixed-point Taylor series:** `exp(x)` and `ln(x)` as truncated polynomial approximations using fixed-point `Field` arithmetic (e.g., 18-decimal scale). A 6th-order Taylor expansion gives <0.1% error for |x| < 2, covering typical LMSR range.
+  2. **Piecewise linear lookup:** Pre-compute `exp` at discrete intervals, interpolate linearly. Fewer constraints, lower accuracy.
+  3. **Range reduction + polynomial:** `exp(x) = exp(k) * exp(r)` where `k` is integer (lookup) and `r` is small (polynomial). Best accuracy-to-constraint ratio.
+  All three are buildable in Noir today. Expect ~500–2000 additional constraints per LMSR price calculation — modest relative to note encryption overhead.
 - **Aztec escape hatch:** If a single function’s constraints explode, use **recursive verification** (off-chain or batched Noir prove of the pricing step, **verify proof on Aztec**) per Aztec [recursive verification tutorial](https://docs.aztec.network/developers/docs/tutorials/contract_tutorials/recursive_verification). Treat as **Phase 2+ engineering** if LMSR proves too fat for one circuit.
 
 **[x] RECOMMENDED for long-term — evaluate LMSR implementation complexity in Noir during Phase 1**
@@ -608,10 +616,28 @@ Split one logical trade across **multiple Aztec transactions** (e.g. partial fil
 **Issue:** Oracle contract interface, trust model, and multi-sig not specified.
 
 **Recommended Interface:**
-```
-resolveMarket(marketId: Field, outcome: bool, signature: [Signature; N]) — requires M-of-N signatures
-disputeResolution(marketId: Field, bond: u64) — within challenge window
-finaliseResolution(marketId: Field) — callable by anyone after challenge window
+
+> **Note:** The pseudocode below is conceptual. In Aztec.nr, access control uses the AuthWit (Authentication Witness) pattern rather than passing raw signatures into functions. Each authorised signer creates an AuthWit off-chain; the contract checks `context.assert_valid_authwit(signer, action_hash)` before executing.
+
+```noir
+// Conceptual — actual Noir syntax uses #[public] / #[private] annotations
+#[public]
+fn resolve_market(market_id: Field, outcome: bool) {
+    // Caller must be the multi-sig account contract, or
+    // the contract checks N AuthWits from approved signers
+    assert(is_authorised_resolver(context.msg_sender()));
+    // ... store outcome, start challenge window
+}
+
+#[public]
+fn dispute_resolution(market_id: Field, bond_amount: Field) {
+    // Anyone can call within challenge window; bond is escrowed
+}
+
+#[public]
+fn finalise_resolution(market_id: Field) {
+    // Callable by anyone after challenge window expires
+}
 ```
 
 #### Option A — Admin EOA (Current implied state)
@@ -625,10 +651,13 @@ Single admin private key calls `resolveMarket`.
 ---
 
 #### Option B — Multi-sig Resolver (e.g., 3-of-5)
-Resolution requires M of N pre-approved signers. Use Aztec's native multi-sig or a Gnosis Safe on L1 bridged to Aztec.
+Resolution requires M of N pre-approved signers.
 
 - **Pros:** No single point of compromise; significantly more trustworthy.
 - **Cons:** Operational overhead (coordinate 3+ signatures per resolution); delays resolution by minutes to hours.
+- **How to build this:** Aztec does not have a native multi-sig contract. Two viable approaches:
+  1. **Custom Noir multi-sig account contract (on L2):** Build an account contract that requires M-of-N Schnorr signatures via Aztec's AuthWit (Authentication Witness) pattern. Each signer submits an AuthWit; the contract verifies the threshold before executing. Keeps resolution on L2 and private. Requires custom Noir development but AuthWit primitives exist.
+  2. **L1 Gnosis Safe + portal bridge (simpler, less private):** Use an L1 Gnosis Safe to call a resolution function on L1, which sends an L1→L2 message via Aztec's portal. The L2 oracle contract consumes the message. Simpler to set up but resolution metadata is public on L1.
 
 **[x] RECOMMENDED for Phase 1 mainnet and beyond**
 
@@ -643,7 +672,7 @@ Admin proposes outcome. Anyone can dispute within 48h. If no dispute, outcome is
 
 ### 3.4 Upgrade & Emergency Mechanisms
 
-**Issue:** Aztec contracts are immutable post-deployment. Bugs found in production cannot be patched.
+**Issue:** ~~Aztec contracts are immutable post-deployment.~~ **Correction:** Aztec natively supports contract upgrades. Each contract instance has `originalContractClassId` and `currentContractClassId`. Upgrading works by calling `ContractInstanceRegistry.update(newClassId)` from within the contract itself, which schedules a time-delayed class ID change via `DelayedPublicMutable`. After the delay, the contract executes code from the new implementation while the address stays the same.
 
 #### Option A — Escape Hatch / Emergency Pause + Migration
 Add an `emergencyPause()` function callable by multi-sig. When paused, all trades halt. A `migrate(newVault)` function allows users to pull their notes to a new contract deployment.
@@ -659,9 +688,9 @@ Add an `emergencyPause()` function callable by multi-sig. When paused, all trade
 Deploy a proxy contract that delegates to an implementation contract. Upgrade the implementation without changing the address.
 
 - **Pros:** Seamless upgrades; users don't need to migrate.
-- **Cons:** Proxy patterns on Aztec are complex and may not be mature in v5; proxy admin key is a power risk.
+- **Cons:** Proxy patterns on Aztec are **superseded by the native upgrade mechanism** — `ContractInstanceRegistry.update(newClassId)` with time-delayed class ID change via `DelayedPublicMutable`. The contract address stays the same. Use the native approach instead.
 
-**[ ] Investigate feasibility in Aztec v5 — adopt only if well-supported**
+**[ ] Not needed — Aztec has native contract upgrades. Use `ContractInstanceRegistry.update()` instead of proxies.**
 
 ---
 
@@ -1037,14 +1066,12 @@ Deploy an Aztec-compatible subgraph for automatic event indexing.
 
 ### 8.4 Aztec Version Pinning
 
-**Issue:** PRD does not specify Aztec version; marketing labels (e.g. “v5”) may not match **npm `aztec` / network** names.
+**Issue:** PRD does not specify Aztec version.
 
-**Recommendation:**
-- Pin an explicit **toolchain triple** in the repo: `aztec-up` / node version / `@aztec/aztec.js` semver (and Noir compiler version). Replace “v5” in tickets with **whatever Aztec documents as current stable** when you cut the branch.
-- Track upstream release notes for: note encryption, portal/inbox API, PXE, fee payment methods, Noir stdlib.
-- Watch [**AztecProtocol/aztec-packages**](https://github.com/AztecProtocol/aztec-packages) releases and [Aztec docs](https://docs.aztec.network/) **version switcher** — public testnet deploy assumes compatible **Ethereum test network** (e.g. Sepolia) per upstream tutorials.
-
-Assign one **Aztec version owner** to watch releases and file breaking-change tickets.
+**Recommendation:** Pin to **Aztec SDK v4.2.0-aztecnr-rc.2** (or latest stable release) explicitly in the PRD and in all dependency files (`Nargo.toml`, `package.json`). There is no “v5” — Aztec is currently on v4.x with alpha-testnet (node v4.1.3, alpha-testnet tag 0.85.0-alpha-testnet.9).
+- Pin an explicit **toolchain triple** in the repo: `aztec-up` version / `@aztec/aztec.js` semver / Noir compiler version.
+- Track upstream release notes for: note encryption model and note discovery (tagging system), portal/bridge API changes (`TokenPortal.sol`, `token_bridge_contract`), PXE interface changes and wallet SDK (`@aztec/wallets/embedded`), Noir stdlib and Aztec.nr updates, contract upgrade mechanism (`ContractInstanceRegistry`).
+- Watch [**AztecProtocol/aztec-packages**](https://github.com/AztecProtocol/aztec-packages) releases and [Aztec docs](https://docs.aztec.network/) — public testnet deploy assumes compatible **Ethereum test network** (e.g. Sepolia) per upstream tutorials.
 
 ---
 

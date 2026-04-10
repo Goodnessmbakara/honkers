@@ -55,7 +55,7 @@ Derived from `SRS.md` and `ideation.md`. Each phase builds on the previous one.
 
 ### 1.9 Admin Console
 - [ ] FR-A-1 — View markets needing resolution / in grace / void-eligible
-- [ ] FR-A-2 — Resolution workflow (export payload for Safe + status tracking)
+- [ ] FR-A-2 — Resolution workflow (export payload for L1 Gnosis Safe or L2 AuthWit multi-sig + status tracking)
 - [ ] FR-A-3 — Dispute window status per market
 - [ ] FR-A-4 — Emergency pause / migration messaging
 - [ ] FR-A-5 — Curated resolution input (internal DB/CSV, no Polymarket API)
@@ -147,7 +147,7 @@ Derived from `SRS.md` and `ideation.md`. Each phase builds on the previous one.
 
 ### 2.7 Privacy Improvements
 - [ ] FR-B-4 — Encrypted remote note sync (E2E encrypt before upload)
-- [ ] Investigate deterministic note derivation from account key (Aztec v5)
+- [ ] Investigate deterministic note derivation from account key (track Aztec SDK roadmap; current recovery uses PXE re-registration + trial-decryption from on-chain logs)
 - [ ] Batch execution with delayed price update to reduce AMM leakage
 - [ ] Commit-reveal scheme for trades evaluation
 - [ ] Non-logging RPC proxy as default + custom RPC option
@@ -168,7 +168,7 @@ Derived from `SRS.md` and `ideation.md`. Each phase builds on the previous one.
 ### 2.10 Infrastructure Hardening
 - [ ] Evaluate The Graph Protocol for Aztec subgraph (if ready)
 - [ ] LP incentive programme design
-- [ ] Proxy upgrade pattern investigation for Aztec contracts
+- [ ] Use native contract upgrade mechanism (`ContractInstanceRegistry.update()` with `DelayedPublicMutable`) — no proxy pattern needed
 - [ ] User-paid fee path (replace sponsored FPC for mainnet)
 
 ---
@@ -178,7 +178,10 @@ Derived from `SRS.md` and `ideation.md`. Each phase builds on the previous one.
 **Goal:** Decentralized oracle, advanced privacy, governance, and ecosystem maturity.
 
 ### 3.1 UMA Optimistic Oracle
-- [ ] Aztec ↔ UMA cross-chain integration for dispute resolution
+- [ ] Deploy L1 `OracleRelay.sol` integrating with UMA `OptimisticOracleV3` on Ethereum
+- [ ] Bridge resolution results to Aztec L2 via canonical L1↔L2 portal messages
+- [ ] L2 `Oracle.nr` consumes cross-chain messages to finalise market resolution
+- [ ] Dispute flow: L2→L1 message triggers UMA dispute process, result bridged back
 - [ ] Fully decentralized arbitration via UMA token holders
 
 ### 3.2 Advanced Auto-Claim

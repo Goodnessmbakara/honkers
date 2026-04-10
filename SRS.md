@@ -216,7 +216,7 @@ The system is a **prediction market dApp** on Aztec: **private** positions and b
 | ID         | Requirement                                                                                                            | PRD trace   |
 | ---------- | ---------------------------------------------------------------------------------------------------------------------- | ----------- |
 | **FR-A-1** | View markets needing resolution / in grace / void-eligible.                                                            | §5.2 Keeper |
-| **FR-A-2** | **Resolution** workflow aligned with M-of-N (may be “export payload for Safe” + status tracking if no on-app signing). | §3.3        |
+| **FR-A-2** | **Resolution** workflow aligned with M-of-N (may be "export payload for L1 Gnosis Safe" or "collect L2 AuthWit signatures" + status tracking). | §3.3        |
 | **FR-A-3** | **Dispute window** status per market (§2.1).                                                                           | §2.1        |
 | **FR-A-4** | **Emergency pause** / migration messaging when protocol paused (§3.4).                                                 | §3.4        |
 | **FR-A-5** | **Phase 1:** curated resolution input (internal DB/CSV) — no Polymarket API (§5.2, §3.5).                              | §5.2        |
