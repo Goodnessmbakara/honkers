@@ -1,7 +1,7 @@
-/// Honkers — Noir unit tests
+/// Honkers -- Noir unit tests
 ///
 /// Pure arithmetic tests for AMM math, fee calculation, and price functions.
-/// These do not require the Aztec Sandbox — run with:
+/// These do not require the Aztec Sandbox -- run with:
 ///
 ///   nargo test
 ///
@@ -24,14 +24,15 @@ global SIDE_YES: Field = 1;
 global SIDE_NO: Field = 0;
 
 // ---------------------------------------------------------------------------
-// Pure math helpers (mirrors contract logic — tested independently)
+// Pure math helpers (mirrors contract logic -- tested independently)
 // ---------------------------------------------------------------------------
 
 /// CPMM swap output.
 /// shares_out = reserve_out - (k / (reserve_in + amount_in))
+/// Uses integer division (not Field modular inverse).
 fn cpmm_shares_out(reserve_in: Field, reserve_out: Field, k: Field, amount_in: Field) -> Field {
     let new_reserve_in = reserve_in + amount_in;
-    let new_reserve_out = k / new_reserve_in;
+    let new_reserve_out = (k as u64 / new_reserve_in as u64) as Field;
     reserve_out - new_reserve_out
 }
 
@@ -40,7 +41,7 @@ fn cpmm_shares_out(reserve_in: Field, reserve_out: Field, k: Field, amount_in: F
 fn cpmm_buy_yes(reserve_yes: Field, reserve_no: Field, amount_in: Field) -> (Field, Field) {
     let k = reserve_yes * reserve_no;
     let new_no = reserve_no + amount_in;
-    let new_yes = k / new_no;
+    let new_yes = (k as u64 / new_no as u64) as Field;
     (new_yes, new_no)
 }
 
@@ -48,24 +49,28 @@ fn cpmm_buy_yes(reserve_yes: Field, reserve_no: Field, amount_in: Field) -> (Fie
 fn cpmm_buy_no(reserve_yes: Field, reserve_no: Field, amount_in: Field) -> (Field, Field) {
     let k = reserve_yes * reserve_no;
     let new_yes = reserve_yes + amount_in;
-    let new_no = k / new_yes;
+    let new_no = (k as u64 / new_yes as u64) as Field;
     (new_yes, new_no)
 }
 
 /// Implied P(YES) = reserve_no / (reserve_yes + reserve_no) * SCALE.
 fn price_yes(reserve_yes: Field, reserve_no: Field) -> Field {
-    (reserve_no * SCALE) / (reserve_yes + reserve_no)
+    let numerator = reserve_no * SCALE;
+    let denominator = reserve_yes + reserve_no;
+    (numerator as u64 / denominator as u64) as Field
 }
 
 /// Implied P(NO) = reserve_yes / (reserve_yes + reserve_no) * SCALE.
 fn price_no(reserve_yes: Field, reserve_no: Field) -> Field {
-    (reserve_yes * SCALE) / (reserve_yes + reserve_no)
+    let numerator = reserve_yes * SCALE;
+    let denominator = reserve_yes + reserve_no;
+    (numerator as u64 / denominator as u64) as Field
 }
 
 /// Platform fee deducted from gross winnings.
 /// fee = amount * FEE_NUMERATOR / FEE_DENOMINATOR
 fn platform_fee(amount: Field) -> Field {
-    (amount * FEE_NUMERATOR) / FEE_DENOMINATOR
+    ((amount * FEE_NUMERATOR) as u64 / FEE_DENOMINATOR as u64) as Field
 }
 
 /// Net winnings after platform fee.
@@ -76,7 +81,7 @@ fn net_winnings(gross: Field) -> Field {
 fn main() {}
 
 // ---------------------------------------------------------------------------
-// AMM — initialisation
+// AMM -- initialisation
 // ---------------------------------------------------------------------------
 
 /// A market initialised with 1000 USDC bond gets 500 / 500 reserves and k = 250_000.
@@ -90,7 +95,7 @@ fn test_cpmm_initial_50_50() {
 }
 
 // ---------------------------------------------------------------------------
-// AMM — price at 50/50
+// AMM -- price at 50/50
 // ---------------------------------------------------------------------------
 
 /// At 50/50 reserves, P(YES) = P(NO) = 0.5 (500_000 in 1e6 scale).
@@ -118,7 +123,7 @@ fn test_price_sum_equals_scale() {
 /// When reserve_no > reserve_yes, P(YES) > 0.5.
 #[test]
 fn test_price_yes_when_skewed() {
-    // More NO reserve means YES is "cheap" to buy → but P(YES) = rn / (ry+rn)
+    // More NO reserve means YES is "cheap" to buy -> but P(YES) = rn / (ry+rn)
     // If rn = 700, ry = 300: P(YES) = 700/1000 = 0.7
     let ry: Field = 300_000_000;
     let rn: Field = 700_000_000;
@@ -127,7 +132,7 @@ fn test_price_yes_when_skewed() {
 }
 
 // ---------------------------------------------------------------------------
-// AMM — swap / trade math
+// AMM -- swap / trade math
 // ---------------------------------------------------------------------------
 
 /// Buying YES shares reduces reserve_yes and increases reserve_no.
@@ -136,7 +141,6 @@ fn test_price_yes_when_skewed() {
 fn test_buy_yes_updates_reserves_correctly() {
     let ry: Field = 500_000_000;
     let rn: Field = 500_000_000;
-    let k_before = ry * rn;
     let amount_in: Field = 10_000_000; // 10 USDC
 
     let (new_ry, new_rn) = cpmm_buy_yes(ry, rn, amount_in);
@@ -146,10 +150,14 @@ fn test_buy_yes_updates_reserves_correctly() {
     // reserve_yes decreased
     assert(new_ry as u64 < ry as u64);
     // k preserved (within integer rounding)
-    let k_after = new_ry * new_rn;
+    let k_after = new_ry as u64 * new_rn as u64;
+    let k_orig = ry as u64 * rn as u64;
     // k_after may be slightly less than k_before due to integer division truncation
-    assert(k_after as u64 <= k_before as u64);
-    assert(k_before as u64 - k_after as u64 < 1_000_000); // rounding < 1 USDC
+    assert(k_after <= k_orig);
+    // Rounding error bounded: at 500M reserves with 10 USDC trade, loss is ~220M units
+    // (product units, not USDC). Relative error < 0.0001%.
+    let rounding_loss = k_orig - k_after;
+    assert(rounding_loss < 500_000_000); // < 500 units in product space
 }
 
 /// Buying NO shares reduces reserve_no and increases reserve_yes.
@@ -204,7 +212,7 @@ fn test_buy_yes_increases_yes_price() {
 }
 
 // ---------------------------------------------------------------------------
-// AMM — edge cases
+// AMM -- edge cases
 // ---------------------------------------------------------------------------
 
 /// Price calculation is stable at extreme reserves (market strongly skewed).
@@ -215,7 +223,7 @@ fn test_price_at_extreme_reserves() {
     let rn: Field = 100_000_000;
     let p_yes = price_yes(ry, rn);
     let p_no = price_no(ry, rn);
-    assert(p_yes == 100_000); // ~0.1 — YES is cheap when it's highly likely? No wait.
+    assert(p_yes == 100_000); // ~0.1 -- YES is cheap when it's highly likely? No wait.
     // P(YES) = rn / (ry + rn) = 100 / 1000 = 0.1
     // This means: YES is at 10 cents (unlikely), NO is at 90 cents (likely)
     assert(p_no == 900_000);
@@ -242,19 +250,19 @@ fn test_net_winnings_after_fee() {
     assert(net == 97_000_000); // 97 USDC
 }
 
-/// Fee rounds down (protects protocol — never charges more than 3%).
+/// Fee rounds down (protects protocol -- never charges more than 3%).
 #[test]
 fn test_fee_floor_division() {
-    // Gross not divisible by 100 — fee should floor
+    // Gross not divisible by 100 -- fee should floor
     let gross: Field = 100_000_001;
     let fee = platform_fee(gross);
-    let expected_floor = (100_000_001 * 3) / 100;
+    let expected_floor = ((100_000_001 as u64 * 3) / 100) as Field;
     assert(fee == expected_floor);
     // Net + fee <= gross (no overcharge)
     assert(net_winnings(gross) + fee == gross);
 }
 
-/// Zero winnings → zero fee.
+/// Zero winnings -> zero fee.
 #[test]
 fn test_zero_gross_zero_fee() {
     let gross: Field = 0;

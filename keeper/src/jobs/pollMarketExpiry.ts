@@ -22,7 +22,7 @@ export async function pollMarketExpiry(pool: Pool): Promise<void> {
   }>(
     `SELECT m.market_id, m.question_hash, m.end_date
        FROM markets m
-      WHERE m.end_date < $1
+      WHERE m.end_date < to_timestamp($1)
         AND m.status = 'open'
         AND NOT EXISTS (
               SELECT 1 FROM resolutions r WHERE r.market_id = m.market_id

@@ -16,6 +16,7 @@ export interface Market {
   bond: number;
   status: MarketStatus;
   createdAt: string;
+  question?: string;
 }
 
 export interface MarketDetail extends Market {

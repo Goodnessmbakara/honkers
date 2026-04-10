@@ -1,5 +1,18 @@
 # UI directory — local review/planning files only, not for version control
 ui/
 
-# Local environment variable file — not for version control
+# Environment secrets
 .env
+
+# Node
+node_modules/
+dist/
+pnpm-lock.yaml
+
+# Noir / Aztec build artifacts
+contracts/target/
+tests/noir/target/
+
+# Playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/

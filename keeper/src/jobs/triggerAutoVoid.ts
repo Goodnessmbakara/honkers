@@ -25,7 +25,7 @@ export async function triggerAutoVoid(pool: Pool): Promise<void> {
   }>(
     `SELECT m.market_id, m.end_date
        FROM markets m
-      WHERE m.end_date < $1
+      WHERE m.end_date < to_timestamp($1)
         AND m.status = 'open'
         AND NOT EXISTS (
               SELECT 1 FROM resolutions r
