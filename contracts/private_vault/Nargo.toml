@@ -5,5 +5,5 @@ authors = [""]
 compiler_version = ">=0.35.0"
 
 [dependencies]
-aztec = { workspace = true }
-value_note = { workspace = true }
+aztec = { git = "https://github.com/AztecProtocol/aztec-packages", tag = "aztec-packages-v0.75.0", directory = "noir-projects/aztec-nr/aztec" }
+value_note = { git = "https://github.com/AztecProtocol/aztec-packages", tag = "aztec-packages-v0.75.0", directory = "noir-projects/aztec-nr/value-note" }
