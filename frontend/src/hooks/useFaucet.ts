@@ -39,8 +39,8 @@ export function useFaucet(walletAddress: string | null) {
       try {
         const hash = await simulateAndProve(
           aztecConfig.contracts.testToken,
-          "faucet_mint",
-          [walletAddress, amount * 1e6], // 6 decimal USDC
+          "faucet",
+          [amount * 1e6], // 6 decimal USDC
           walletAddress,
         );
         localStorage.setItem(COOLDOWN_KEY, String(Date.now()));

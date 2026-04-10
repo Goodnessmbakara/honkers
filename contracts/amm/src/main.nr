@@ -85,6 +85,9 @@ contract AMM {
     fn swap(market_id: Field, side: Field, amount_in: Field) -> Field {
         assert(storage.halted.at(market_id).read() == 0, "Market is halted");
 
+        let end_date = storage.end_dates.at(market_id).read();
+        assert(context.timestamp() as u64 <= end_date as u64, "Market has expired");
+
         let reserve_yes = storage.reserve_yes.at(market_id).read();
         let reserve_no = storage.reserve_no.at(market_id).read();
         let k = storage.invariant_k.at(market_id).read();

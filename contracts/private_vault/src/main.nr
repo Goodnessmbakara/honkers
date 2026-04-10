@@ -80,6 +80,7 @@ contract PrivateVault {
     /// Caller must have already transferred tokens; this mints a CollateralNote.
     #[private]
     fn deposit_collateral(amount: Field) {
+        assert(storage.paused.read() == 0, "Vault is paused");
         let sender = context.msg_sender();
         let note = CollateralNote::new(sender, amount);
         storage.collateral.at(sender).insert(&mut note);
@@ -89,6 +90,7 @@ contract PrivateVault {
     /// Consumes an existing CollateralNote and optionally returns change.
     #[private]
     fn withdraw_collateral(amount: Field) {
+        assert(storage.paused.read() == 0, "Vault is paused");
         let sender = context.msg_sender();
         let options = NoteGetterOptions::new();
         let notes = storage.collateral.at(sender).pop_notes(options);
@@ -234,7 +236,9 @@ contract PrivateVault {
         storage.collateral.at(sender).insert(&mut user_collateral);
 
         // Fee goes to platform fee recipient as collateral
-        // (enqueue public call to record fee, or create note for fee_recipient)
+        let fee_recipient = storage.fee_recipient.read();
+        let fee_note = CollateralNote::new(fee_recipient, fee);
+        storage.collateral.at(fee_recipient).insert(&mut fee_note);
     }
 
     // -----------------------------------------------------------------------

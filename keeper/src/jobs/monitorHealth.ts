@@ -47,10 +47,10 @@ export async function monitorHealth(pool: Pool): Promise<void> {
 
   // Check indexer lag
   try {
-    const { rows } = await pool.query<{ last_block: number; updated_at: Date }>(
-      `SELECT last_block_number AS last_block, updated_at
+    const { rows } = await pool.query<{ last_block: string; updated_at: Date }>(
+      `SELECT value AS last_block, updated_at
          FROM indexer_state
-        ORDER BY updated_at DESC
+        WHERE key = 'last_indexed_block'
         LIMIT 1`,
     );
     if (rows[0]) {

@@ -4,13 +4,13 @@
 // ---------------------------------------------------------------------------
 
 const DEFAULT_PXE_URL = "http://localhost:8080";
-const INDEXER_URL = import.meta.env.VITE_INDEXER_URL ?? "http://localhost:3001";
+const INDEXER_URL = import.meta.env.VITE_INDEXER_API_URL ?? "http://localhost:3001";
 
 function getPxeUrl(): string {
   // User override stored in localStorage (Settings page)
   const override = localStorage.getItem("honkers:pxe-url");
   if (override) return override;
-  return import.meta.env.VITE_PXE_URL ?? DEFAULT_PXE_URL;
+  return import.meta.env.VITE_AZTEC_RPC_URL ?? DEFAULT_PXE_URL;
 }
 
 export const aztecConfig = {
