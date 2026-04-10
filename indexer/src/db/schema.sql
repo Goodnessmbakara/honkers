@@ -1,0 +1,3 @@
+-- PostgreSQL schema for the Honkers indexer
+-- Stores public chain events and market metadata
+-- No plaintext private notes transmitted or stored (COM-2)

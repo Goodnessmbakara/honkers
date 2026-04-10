@@ -1,0 +1,3 @@
+// Noir unit tests run via `nargo test` in respective contract directories
+// This directory holds shared test utilities or additional test files
+// Test coverage: AMM math, note hashing, nullifier derivation

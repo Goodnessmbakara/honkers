@@ -1,0 +1,9 @@
+# Aztec.nr workspace — all prediction market contracts
+[workspace]
+members = [
+  "private_vault",
+  "amm",
+  "oracle",
+  "market_factory",
+  "test_token",
+]
