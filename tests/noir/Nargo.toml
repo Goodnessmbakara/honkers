@@ -1,0 +1,7 @@
+[package]
+name = "honkers_unit_tests"
+type = "bin"
+authors = ["Honkers"]
+
+[dependencies]
+# No aztec dep needed — these are pure arithmetic unit tests
