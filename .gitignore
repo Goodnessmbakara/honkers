@@ -1,2 +1,5 @@
 # UI directory — local review/planning files only, not for version control
 ui/
+
+# Local environment variable file — not for version control
+.env
