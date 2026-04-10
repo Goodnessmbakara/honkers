@@ -7,3 +7,8 @@ members = [
   "market_factory",
   "test_token",
 ]
+
+[workspace.dependencies]
+aztec = { git = "https://github.com/AztecProtocol/aztec-packages", tag = "aztec-packages-v0.75.0", directory = "noir-projects/aztec-nr/aztec" }
+authority = { git = "https://github.com/AztecProtocol/aztec-packages", tag = "aztec-packages-v0.75.0", directory = "noir-projects/aztec-nr/authority" }
+value_note = { git = "https://github.com/AztecProtocol/aztec-packages", tag = "aztec-packages-v0.75.0", directory = "noir-projects/aztec-nr/value-note" }

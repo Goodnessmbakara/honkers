@@ -6,12 +6,21 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/db/migrate.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "express": "^5.1.0",
+    "pg": "^8.13.0",
+    "cors": "^2.8.5",
+    "helmet": "^8.0.0"
+  },
   "devDependencies": {
     "typescript": "~5.7.0",
     "tsx": "^4.0.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "@types/express": "^5.0.0",
+    "@types/pg": "^8.11.0",
+    "@types/cors": "^2.8.17"
   }
 }
