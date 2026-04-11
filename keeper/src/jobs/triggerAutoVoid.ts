@@ -1,6 +1,11 @@
 // ---------------------------------------------------------------------------
 // Job: Trigger auto-void for markets past the 72-hour grace period.
 // Calls Oracle.void_market() on-chain for each eligible market.
+//
+// v4.1.3: State-changing transactions require a full wallet to simulate,
+// prove, and send. This currently logs the intent and alerts the admin.
+// A full implementation would use a server-side EmbeddedWallet from
+// @aztec/wallets/embedded (Node.js entrypoint).
 // ---------------------------------------------------------------------------
 
 import { Pool } from "pg";
@@ -13,7 +18,7 @@ import { alertInfo, alertCritical } from "../utils/alerts";
  *   2. No resolution has been finalised (state != 'resolved'), AND
  *   3. The market has not already been voided.
  *
- * For each, submits an `Oracle.void_market(market_id)` transaction.
+ * For each, attempts to submit an `Oracle.void_market(market_id)` transaction.
  */
 export async function triggerAutoVoid(pool: Pool): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
@@ -44,36 +49,22 @@ export async function triggerAutoVoid(pool: Pool): Promise<void> {
 
   for (const row of rows) {
     try {
-      // Send void_market() transaction to the Oracle contract
-      const body = {
-        jsonrpc: "2.0",
-        id: 1,
-        method: "node_call",
-        params: {
-          to: config.oracleAddress,
-          from: config.adminPrivateKey,
-          functionName: "void_market",
-          args: [row.market_id],
-        },
-      };
+      // TODO: Implement server-side EmbeddedWallet transaction submission.
+      // In v4.1.3, submitting a state-changing tx requires:
+      //   1. Create a NodeEmbeddedWallet (from @aztec/wallets/embedded)
+      //   2. Contract.at(oracleAddress, OracleArtifact, wallet)
+      //   3. contract.methods.void_market(market_id).send({ from: adminAddress })
+      //
+      // For now, alert the admin so they can void manually via the UI.
+      await alertInfo(
+        `Market ${row.market_id} is past grace period and needs voiding. ` +
+        `Manual action required until server-side wallet is configured.`,
+      );
 
-      const res = await fetch(config.aztecRpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(`RPC ${res.status}: ${text}`);
-      }
-
-      const json = (await res.json()) as { error?: { message: string } };
-      if (json.error) {
-        throw new Error(`RPC error: ${json.error.message}`);
-      }
-
-      await alertInfo(`Successfully voided market ${row.market_id}`);
+      console.log(
+        `[keeper] Market ${row.market_id} eligible for auto-void (end_date=${row.end_date}). ` +
+        `Server-side tx submission not yet implemented.`,
+      );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       await alertCritical(

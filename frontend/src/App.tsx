@@ -5,6 +5,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/safety/ErrorBoundary";
+import { AztecProvider } from "./components/AztecProvider";
 
 // Pages
 import { Landing } from "./pages/Landing";
@@ -31,7 +32,8 @@ import { AdminMarket } from "./admin/AdminMarket";
 export default function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
+      <AztecProvider>
+        <BrowserRouter>
         <Routes>
           {/* Public shell routes */}
           <Route element={<AppShell />}>
@@ -60,6 +62,7 @@ export default function App() {
           <Route path="maintenance" element={<Maintenance />} />
         </Routes>
       </BrowserRouter>
+      </AztecProvider>
     </ErrorBoundary>
   );
 }
