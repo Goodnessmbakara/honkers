@@ -6,10 +6,17 @@
   "scripts": {
     "test": "tsx --test src/**/*.test.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@aztec/accounts": "4.1.3",
+    "@aztec/aztec.js": "4.1.3",
+    "@aztec/cli-wallet": "4.1.3",
+    "@aztec/pxe": "4.1.3",
+    "@aztec/stdlib": "4.1.3",
+    "@aztec/wallet-sdk": "4.1.3"
+  },
   "devDependencies": {
-    "typescript": "~5.7.0",
+    "@types/node": "^22.0.0",
     "tsx": "^4.0.0",
-    "@types/node": "^22.0.0"
+    "typescript": "~5.7.0"
   }
 }

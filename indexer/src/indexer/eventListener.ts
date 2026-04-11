@@ -41,7 +41,7 @@ async function aztecRpc(method: string, params: unknown[] = []): Promise<any> {
 
 /** Get the current block number from the Aztec node. */
 async function getBlockNumber(): Promise<number> {
-  const result = await aztecRpc("aztec_getBlockNumber");
+  const result = await aztecRpc("node_getBlockNumber");
   return Number(result);
 }
 
@@ -64,7 +64,7 @@ async function indexMarketFactory(fromBlock: number, toBlock: number): Promise<v
 
   try {
     // Read next_market_id from the factory (unconstrained fn)
-    const nextId = await aztecRpc("aztec_call", [
+    const nextId = await aztecRpc("node_call", [
       {
         to: config.contracts.marketFactory,
         functionName: "get_next_market_id",
@@ -86,7 +86,7 @@ async function indexMarketFactory(fromBlock: number, toBlock: number): Promise<v
       if (existingIds.has(mid)) continue;
 
       try {
-        const info = await aztecRpc("aztec_call", [
+        const info = await aztecRpc("node_call", [
           {
             to: config.contracts.marketFactory,
             functionName: "get_market_info",
@@ -140,7 +140,7 @@ async function indexOracleResolutions(): Promise<void> {
 
     for (const { market_id } of pending) {
       try {
-        const state = await aztecRpc("aztec_call", [
+        const state = await aztecRpc("node_call", [
           {
             to: config.contracts.oracle,
             functionName: "get_resolution_state",
@@ -155,12 +155,12 @@ async function indexOracleResolutions(): Promise<void> {
 
         if (oracleState >= ResolutionState.Proposed) {
           proposedOutcome = Number(
-            await aztecRpc("aztec_call", [
+            await aztecRpc("node_call", [
               { to: config.contracts.oracle, functionName: "get_proposed_outcome", args: [market_id] },
             ]),
           );
           proposedAt = Number(
-            await aztecRpc("aztec_call", [
+            await aztecRpc("node_call", [
               { to: config.contracts.oracle, functionName: "get_proposed_at", args: [market_id] },
             ]),
           );
@@ -224,7 +224,7 @@ async function indexAmmSnapshots(blockNumber: number): Promise<void> {
 
     for (const { market_id } of markets) {
       try {
-        const reserves = await aztecRpc("aztec_call", [
+        const reserves = await aztecRpc("node_call", [
           {
             to: config.contracts.amm,
             functionName: "get_reserves",

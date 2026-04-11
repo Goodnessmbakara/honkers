@@ -1,13 +1,10 @@
-use dep::aztec::prelude::{AztecAddress, NoteHeader, NoteInterface, PrivateContext};
-use dep::aztec::macros::notes::note;
-use dep::aztec::protocol_types::traits::{Deserialize, Serialize};
+use aztec::macros::notes::note;
+use aztec::protocol::traits::Packable;
 
 /// YES/NO outcome shares for a specific market.
-/// `side`: 1 = YES, 0 = NO (Field used instead of bool for circuit efficiency).
-/// `entry_price`: price paid per share at trade time (fixed-point 1e6).
+#[derive(Eq, Packable)]
 #[note]
 pub struct ShareNote {
-    owner: AztecAddress,
     market_id: Field,
     side: Field,
     amount: Field,
@@ -16,17 +13,12 @@ pub struct ShareNote {
 
 impl ShareNote {
     pub fn new(
-        owner: AztecAddress,
         market_id: Field,
         side: Field,
         amount: Field,
         entry_price: Field,
     ) -> Self {
-        ShareNote { owner, market_id, side, amount, entry_price, header: NoteHeader::empty() }
-    }
-
-    pub fn get_owner(self) -> AztecAddress {
-        self.owner
+        ShareNote { market_id, side, amount, entry_price }
     }
 
     pub fn get_market_id(self) -> Field {

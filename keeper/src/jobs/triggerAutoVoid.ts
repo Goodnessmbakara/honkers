@@ -48,7 +48,7 @@ export async function triggerAutoVoid(pool: Pool): Promise<void> {
       const body = {
         jsonrpc: "2.0",
         id: 1,
-        method: "aztec_call",
+        method: "node_call",
         params: {
           to: config.oracleAddress,
           from: config.adminPrivateKey,

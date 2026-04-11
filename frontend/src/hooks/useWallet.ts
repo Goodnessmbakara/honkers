@@ -33,7 +33,7 @@ export function useWallet() {
         body: JSON.stringify({
           jsonrpc: "2.0",
           id: 1,
-          method: "pxe_getRegisteredAccounts",
+          method: "node_getAccounts",
           params: [],
         }),
       });

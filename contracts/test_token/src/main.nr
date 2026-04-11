@@ -1,149 +1,121 @@
-use dep::aztec::macros::aztec;
+use aztec::macros::aztec;
 
-/// TestToken — testnet USDC for Phase 1 (no L1 bridge).
+/// TestToken -- testnet USDC for Phase 1 (no L1 bridge).
 ///
-/// A simplified private token with:
+/// A simplified public token with:
 ///   - Public mint (faucet) with per-address rate limiting (fair-use).
-///   - Private transfers via note consumption and creation.
+///   - Public transfers.
 ///   - Total supply tracking (public).
-///
-/// Phase 1 uses Aztec's sponsored FPC on local/devnet to reduce fee friction.
-/// This contract is NOT used in mainnet; replaced by real USDC via Token Portal.
 #[aztec]
-contract TestToken {
-    use dep::aztec::prelude::{AztecAddress, Map, NoteGetterOptions, PrivateSet, PublicMutable, SharedImmutable};
-    use dep::aztec::macros::{functions::{initializer, private, public}, storage::storage};
+pub contract TestToken {
+    use aztec::{
+        macros::{functions::{external, initializer}, storage::storage},
+        protocol::{address::AztecAddress, traits::ToField},
+        state_vars::{Map, PublicImmutable, PublicMutable},
+    };
 
-    /// Maximum faucet drip per address per request (100 USDC = 100_000_000 in 1e6).
     global MAX_FAUCET_AMOUNT: Field = 100000000;
-    /// Cooldown period between faucet requests in seconds (1 hour).
     global FAUCET_COOLDOWN: Field = 3600;
 
     #[storage]
-    struct Storage {
-        /// Admin address.
-        admin: PublicMutable<AztecAddress>,
-        /// Token name hash (for display purposes).
-        name: SharedImmutable<Field>,
-        /// Token symbol hash.
-        symbol: SharedImmutable<Field>,
-        /// Decimals (6 for USDC).
-        decimals: SharedImmutable<Field>,
-        /// Total supply (public).
-        total_supply: PublicMutable<Field>,
-        /// Private balances per owner (set of value notes).
-        /// We use a simple Field-amount note pattern here.
-        balances: Map<AztecAddress, PublicMutable<Field>>,
-        /// Last faucet timestamp per address (for rate limiting).
-        last_faucet: Map<Field, PublicMutable<Field>>,
+    struct Storage<Context> {
+        admin: PublicMutable<AztecAddress, Context>,
+        name: PublicImmutable<Field, Context>,
+        symbol: PublicImmutable<Field, Context>,
+        decimals: PublicImmutable<Field, Context>,
+        total_supply: PublicMutable<Field, Context>,
+        balances: Map<AztecAddress, PublicMutable<Field, Context>, Context>,
+        last_faucet: Map<Field, PublicMutable<Field, Context>, Context>,
     }
-
-    // -----------------------------------------------------------------------
-    // Initialiser
-    // -----------------------------------------------------------------------
 
     #[initializer]
-    #[public]
+    #[external("public")]
     fn constructor(admin: AztecAddress, name: Field, symbol: Field) {
-        storage.admin.write(admin);
-        storage.name.initialize(name);
-        storage.symbol.initialize(symbol);
-        storage.decimals.initialize(6);
-        storage.total_supply.write(0);
+        self.storage.admin.write(admin);
+        self.storage.name.initialize(name);
+        self.storage.symbol.initialize(symbol);
+        self.storage.decimals.initialize(6);
+        self.storage.total_supply.write(0);
     }
 
-    // -----------------------------------------------------------------------
-    // Faucet — public mint with fair-use enforcement
-    // -----------------------------------------------------------------------
-
-    /// Request testnet tokens from the faucet.
-    /// Rate-limited: one request per FAUCET_COOLDOWN per address.
-    /// Max amount: MAX_FAUCET_AMOUNT per request.
-    #[public]
+    #[external("public")]
     fn faucet(amount: Field) {
         assert(amount as u64 <= MAX_FAUCET_AMOUNT as u64, "Exceeds max faucet amount");
         assert(amount as u64 > 0, "Amount must be positive");
 
-        let sender = context.msg_sender();
+        let sender = self.msg_sender();
         let key = sender.to_field();
 
-        // Rate limit check
-        let last = storage.last_faucet.at(key).read();
-        let now = context.timestamp();
+        let last = self.storage.last_faucet.at(key).read();
+        let now = self.context.timestamp() as Field;
         if last != 0 {
             assert(
-                (now - last) as u64 >= FAUCET_COOLDOWN as u64,
+                (now as u64 - last as u64) >= FAUCET_COOLDOWN as u64,
                 "Faucet cooldown not expired",
             );
         }
 
-        storage.last_faucet.at(key).write(now);
+        self.storage.last_faucet.at(key).write(now);
 
-        // Mint to sender's public balance
-        let current = storage.balances.at(sender).read();
-        storage.balances.at(sender).write(current + amount);
-        storage.total_supply.write(storage.total_supply.read() + amount);
+        let current = self.storage.balances.at(sender).read();
+        self.storage.balances.at(sender).write(current + amount);
+        self.storage.total_supply.write(self.storage.total_supply.read() + amount);
     }
 
-    // -----------------------------------------------------------------------
-    // Admin mint — no rate limit (for seeding markets, testing)
-    // -----------------------------------------------------------------------
-
-    #[public]
+    #[external("public")]
     fn admin_mint(to: AztecAddress, amount: Field) {
-        let admin = storage.admin.read();
-        assert(context.msg_sender() == admin, "Only admin can mint");
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can mint");
 
-        let current = storage.balances.at(to).read();
-        storage.balances.at(to).write(current + amount);
-        storage.total_supply.write(storage.total_supply.read() + amount);
+        let current = self.storage.balances.at(to).read();
+        self.storage.balances.at(to).write(current + amount);
+        self.storage.total_supply.write(self.storage.total_supply.read() + amount);
     }
 
-    // -----------------------------------------------------------------------
-    // Public transfers
-    // -----------------------------------------------------------------------
-
-    #[public]
+    #[external("public")]
     fn transfer_public(to: AztecAddress, amount: Field) {
-        let sender = context.msg_sender();
-        let sender_balance = storage.balances.at(sender).read();
+        let sender = self.msg_sender();
+        let sender_balance = self.storage.balances.at(sender).read();
         assert(sender_balance as u64 >= amount as u64, "Insufficient balance");
 
-        storage.balances.at(sender).write(sender_balance - amount);
-        let recipient_balance = storage.balances.at(to).read();
-        storage.balances.at(to).write(recipient_balance + amount);
+        self.storage.balances.at(sender).write(sender_balance - amount);
+        let recipient_balance = self.storage.balances.at(to).read();
+        self.storage.balances.at(to).write(recipient_balance + amount);
     }
 
-    // -----------------------------------------------------------------------
-    // View helpers (unconstrained)
-    // -----------------------------------------------------------------------
-
+    #[external("utility")]
     unconstrained fn balance_of(owner: AztecAddress) -> pub Field {
-        storage.balances.at(owner).read()
+        self.storage.balances.at(owner).read()
     }
 
+    #[external("utility")]
     unconstrained fn total_supply() -> pub Field {
-        storage.total_supply.read()
+        self.storage.total_supply.read()
     }
 
+    #[external("utility")]
     unconstrained fn get_name() -> pub Field {
-        storage.name.read()
+        self.storage.name.read()
     }
 
+    #[external("utility")]
     unconstrained fn get_symbol() -> pub Field {
-        storage.symbol.read()
+        self.storage.symbol.read()
     }
 
+    #[external("utility")]
     unconstrained fn get_decimals() -> pub Field {
-        storage.decimals.read()
+        self.storage.decimals.read()
     }
 
+    #[external("utility")]
     unconstrained fn get_admin() -> pub AztecAddress {
-        storage.admin.read()
+        self.storage.admin.read()
     }
 
+    #[external("utility")]
     unconstrained fn last_faucet_time(owner: AztecAddress) -> pub Field {
         let key = owner.to_field();
-        storage.last_faucet.at(key).read()
+        self.storage.last_faucet.at(key).read()
     }
 }

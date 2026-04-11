@@ -1,0 +1,22 @@
+{
+  "amm-AMM.json": {
+    "contractName": "AMM",
+    "hash": "b157eff2b85e87bc38c7a7ac9019de5c975d5c1ee9b3cf7f5bc53f549d217608"
+  },
+  "market_factory-MarketFactory.json": {
+    "contractName": "MarketFactory",
+    "hash": "f5d2344ae2f75705c4b5702dcd1cf4153d0d5d506dbdf442f09f6579297fbef0"
+  },
+  "oracle-Oracle.json": {
+    "contractName": "Oracle",
+    "hash": "98ab50fa0b6411dd12e297068585f549d559d105c52ce556f5542ab35d7683fa"
+  },
+  "private_vault-PrivateVault.json": {
+    "contractName": "PrivateVault",
+    "hash": "55a43a9741e964aa90882542227e03fb9e0ce1c73114a5d625a21d086ccf2ba6"
+  },
+  "test_token-TestToken.json": {
+    "contractName": "TestToken",
+    "hash": "0c4bd9af041567b4eef26c83eb0d8061c2e4a3978da6731021aa17ead9e9f89a"
+  }
+}

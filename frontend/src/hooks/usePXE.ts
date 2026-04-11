@@ -28,7 +28,7 @@ export function usePXE() {
 
   const checkHealth = useCallback(async () => {
     try {
-      const info = (await rpc("pxe_getNodeInfo")) as { blockNumber?: number };
+      const info = (await rpc("node_getNodeInfo")) as { blockNumber?: number };
       setHealth({ ok: true, blockNumber: info.blockNumber ?? null, error: null });
       return true;
     } catch (err) {
@@ -39,7 +39,7 @@ export function usePXE() {
   }, []);
 
   const getPrivateNotes = useCallback(async (owner: string, contractAddress: string) => {
-    return (await rpc("pxe_getNotes", [{ owner, contractAddress }])) as unknown[];
+    return (await rpc("node_getNotes", [{ owner, contractAddress }])) as unknown[];
   }, []);
 
   const simulateAndProve = useCallback(
@@ -54,17 +54,17 @@ export function usePXE() {
       onStep?.("witness");
 
       // Simulate
-      const simResult = await rpc("pxe_simulateTx", [
+      const simResult = await rpc("node_simulateTx", [
         { to: contractAddress, functionName, args, from },
       ]);
       onStep?.("proving");
 
       // Prove
-      const proveTx = await rpc("pxe_proveTx", [simResult]);
+      const proveTx = await rpc("node_proveTx", [simResult]);
       onStep?.("submitting");
 
       // Send
-      const txHash = await rpc("pxe_sendTx", [proveTx]);
+      const txHash = await rpc("node_sendTx", [proveTx]);
       onStep?.("confirmed");
       return txHash as string;
     },

@@ -21,7 +21,7 @@ export async function monitorHealth(pool: Pool): Promise<void> {
       body: JSON.stringify({
         jsonrpc: "2.0",
         id: 1,
-        method: "aztec_getNodeInfo",
+        method: "node_getNodeInfo",
         params: [],
       }),
       signal: AbortSignal.timeout(10_000),

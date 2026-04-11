@@ -18,7 +18,7 @@ export function Backup() {
     if (!address) return;
     setStatus("Exporting…");
     try {
-      const notes = await rpc("pxe_getNotes", [{ owner: address }]);
+      const notes = await rpc("node_getNotes", [{ owner: address }]);
       const blob = new Blob([JSON.stringify(notes, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -39,7 +39,7 @@ export function Backup() {
     try {
       const text = await file.text();
       const notes = JSON.parse(text);
-      await rpc("pxe_addNotes", [notes]);
+      await rpc("node_addNotes", [notes]);
       setStatus(`Imported ${Array.isArray(notes) ? notes.length : 0} notes.`);
     } catch (err) {
       setStatus(`Import failed: ${err instanceof Error ? err.message : String(err)}`);

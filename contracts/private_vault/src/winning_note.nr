@@ -1,14 +1,10 @@
-use dep::aztec::prelude::{AztecAddress, NoteHeader, NoteInterface, PrivateContext};
-use dep::aztec::macros::notes::note;
-use dep::aztec::protocol_types::traits::{Deserialize, Serialize};
+use aztec::macros::notes::note;
+use aztec::protocol::traits::Packable;
 
 /// Claimable USDC winnings from a resolved market.
-/// `amount` is net winnings BEFORE the 3% platform fee.
-/// `resolved_at` is the L2 block number at resolution time.
-/// Market question text is stored off-chain in the indexer DB, looked up by market_id.
+#[derive(Eq, Packable)]
 #[note]
 pub struct WinningNote {
-    owner: AztecAddress,
     market_id: Field,
     amount: Field,
     resolved_at: Field,
@@ -16,16 +12,11 @@ pub struct WinningNote {
 
 impl WinningNote {
     pub fn new(
-        owner: AztecAddress,
         market_id: Field,
         amount: Field,
         resolved_at: Field,
     ) -> Self {
-        WinningNote { owner, market_id, amount, resolved_at, header: NoteHeader::empty() }
-    }
-
-    pub fn get_owner(self) -> AztecAddress {
-        self.owner
+        WinningNote { market_id, amount, resolved_at }
     }
 
     pub fn get_market_id(self) -> Field {
