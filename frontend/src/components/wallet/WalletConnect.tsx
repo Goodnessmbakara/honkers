@@ -2,11 +2,11 @@
 // CMP-WALLET-CONNECT — Connect/disconnect Aztec wallet, show address + sync
 // ---------------------------------------------------------------------------
 
-import { Wallet, LogOut } from "lucide-react";
+import { Wallet, LogOut, WifiOff } from "lucide-react";
 import { useWallet } from "../../hooks/useWallet";
 
 export function WalletConnect() {
-  const { connected, address, syncing, connect, disconnect } = useWallet();
+  const { connected, address, syncing, connect, disconnect, walletLoading, walletError } = useWallet();
 
   if (connected && address) {
     const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -22,10 +22,19 @@ export function WalletConnect() {
     );
   }
 
+  if (walletError) {
+    return (
+      <button className="btn-secondary" disabled title={walletError} style={{ opacity: 0.6 }}>
+        <WifiOff size={16} />
+        PXE offline
+      </button>
+    );
+  }
+
   return (
-    <button className="btn-primary" onClick={connect} disabled={syncing}>
+    <button className="btn-primary" onClick={connect} disabled={syncing || walletLoading}>
       <Wallet size={16} />
-      {syncing ? "Connecting…" : "Connect wallet"}
+      {walletLoading ? "Initializing…" : syncing ? "Connecting…" : "Connect wallet"}
     </button>
   );
 }

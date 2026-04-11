@@ -3,7 +3,8 @@
 // Default platform proxy (non-logging) + user override option (EI-3)
 // ---------------------------------------------------------------------------
 
-const DEFAULT_PXE_URL = "http://localhost:8080";
+// Use the Vite proxy to avoid CORS issues with the Aztec sandbox
+const DEFAULT_PXE_URL = "/rpc";
 const INDEXER_URL = import.meta.env.VITE_INDEXER_API_URL ?? "http://localhost:3001";
 
 function getPxeUrl(): string {

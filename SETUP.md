@@ -157,7 +157,43 @@ aztec create-account
 
 ## Step-by-Step Setup
 
-### 1. Start PostgreSQL
+### Quick Start (Docker Compose)
+
+The easiest way to run everything is via Docker Compose. This starts all services with correct dependency ordering:
+
+```bash
+# Start all services (Sandbox, PostgreSQL, Indexer, Keeper, Frontend)
+docker compose up -d
+
+# Watch logs
+docker compose logs -f
+
+# Stop everything
+docker compose down
+
+# Stop and wipe database volume
+docker compose down -v
+```
+
+**Service startup order** (handled automatically):
+1. **PostgreSQL** + **Aztec Sandbox** start first
+2. **Indexer** waits for both Postgres and Sandbox to be healthy, runs migration, then starts
+3. **Keeper** waits for both Postgres and Sandbox to be healthy
+4. **Frontend** waits for Sandbox to be healthy
+
+| Service  | Container           | Port | Health Check                   |
+|----------|---------------------|------|--------------------------------|
+| Sandbox  | `honkers-sandbox`   | 8080 | `curl http://localhost:8080/status` |
+| Postgres | `honkers-postgres`  | 5432 | `pg_isready -U honkers`        |
+| Indexer  | `honkers-indexer`   | 3001 | `curl http://localhost:3001/health` |
+| Keeper   | `honkers-keeper`    | —    | —                              |
+| Frontend | `honkers-frontend`  | 5173 | Open in browser                |
+
+### Manual Setup (without Docker Compose)
+
+If you prefer to run services individually:
+
+#### 1. Start PostgreSQL
 
 ```bash
 # Option A: Docker (recommended)
@@ -173,12 +209,18 @@ docker run -d \
 createdb honkers
 ```
 
-### 2. Start the Aztec Sandbox
+#### 2. Start the Aztec Sandbox
 
 ```bash
-aztec start --sandbox
+# Via Docker (recommended — no CLI install needed)
+docker run -d \
+  --name honkers-sandbox \
+  -p 8080:8080 \
+  aztecprotocol/aztec:4.1.3 \
+  start --sandbox
+
 # Sandbox will listen on http://localhost:8080
-# Wait for "Aztec Sandbox started" message before proceeding
+# Wait for health check: curl http://localhost:8080/status
 ```
 
 ### 3. Create an Admin Account
@@ -270,13 +312,21 @@ aztec send \
 
 ## Running Services
 
-### Development Mode (all services)
+### Docker Compose (recommended)
+
+```bash
+docker compose up -d        # Start all services
+docker compose logs -f      # Watch all logs
+docker compose up -d --build  # Rebuild after code changes
+```
+
+### Manual Development Mode
 
 Open separate terminals:
 
 ```bash
 # Terminal 1 — Aztec Sandbox (if not already running)
-aztec start --sandbox
+docker run --rm -p 8080:8080 aztecprotocol/aztec:4.1.3 start --sandbox
 
 # Terminal 2 — Frontend
 cd frontend && pnpm dev
