@@ -45,14 +45,14 @@ export class MarketFactoryContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, admin: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike, token: AztecAddressLike) {
+  public static deploy(wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<MarketFactoryContract>(PublicKeys.default(), wallet, MarketFactoryContractArtifact, (instance, wallet) => MarketFactoryContract.at(instance.address, wallet), Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike, token: AztecAddressLike) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<MarketFactoryContract>(publicKeys, wallet, MarketFactoryContractArtifact, (instance, wallet) => MarketFactoryContract.at(instance.address, wallet), Array.from(arguments).slice(2));
   }
 
@@ -90,7 +90,7 @@ export class MarketFactoryContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'admin' | 'amm' | 'oracle' | 'token' | 'next_market_id' | 'whitelist' | 'market_question_hash' | 'market_criteria_hash' | 'market_source_hash' | 'market_creator' | 'market_end_date' | 'market_bond'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'amm' | 'oracle' | 'token' | 'deps_set' | 'next_market_id' | 'whitelist' | 'market_question_hash' | 'market_criteria_hash' | 'market_source_hash' | 'market_creator' | 'market_end_date' | 'market_bond'> {
       return {
         admin: {
       slot: new Fr(1n),
@@ -99,36 +99,39 @@ amm: {
       slot: new Fr(2n),
     },
 oracle: {
-      slot: new Fr(4n),
+      slot: new Fr(3n),
     },
 token: {
-      slot: new Fr(6n),
+      slot: new Fr(4n),
+    },
+deps_set: {
+      slot: new Fr(5n),
     },
 next_market_id: {
-      slot: new Fr(8n),
+      slot: new Fr(6n),
     },
 whitelist: {
-      slot: new Fr(9n),
+      slot: new Fr(7n),
     },
 market_question_hash: {
-      slot: new Fr(10n),
+      slot: new Fr(8n),
     },
 market_criteria_hash: {
-      slot: new Fr(11n),
+      slot: new Fr(9n),
     },
 market_source_hash: {
-      slot: new Fr(12n),
+      slot: new Fr(10n),
     },
 market_creator: {
-      slot: new Fr(13n),
+      slot: new Fr(11n),
     },
 market_end_date: {
-      slot: new Fr(14n),
+      slot: new Fr(12n),
     },
 market_bond: {
-      slot: new Fr(15n),
+      slot: new Fr(13n),
     }
-      } as ContractStorageLayout<'admin' | 'amm' | 'oracle' | 'token' | 'next_market_id' | 'whitelist' | 'market_question_hash' | 'market_criteria_hash' | 'market_source_hash' | 'market_creator' | 'market_end_date' | 'market_bond'>;
+      } as ContractStorageLayout<'admin' | 'amm' | 'oracle' | 'token' | 'deps_set' | 'next_market_id' | 'whitelist' | 'market_question_hash' | 'market_criteria_hash' | 'market_source_hash' | 'market_creator' | 'market_end_date' | 'market_bond'>;
     }
     
 
@@ -138,8 +141,8 @@ market_bond: {
     /** add_to_whitelist(creator: struct) */
     add_to_whitelist: ((creator: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(admin: struct, amm: struct, oracle: struct, token: struct) */
-    constructor: ((admin: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike, token: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(admin: struct) */
+    constructor: ((admin: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** create_market(question_hash: field, criteria_hash: field, source_hash: field, end_date: field, bond_amount: field) */
     create_market: ((question_hash: FieldLike, criteria_hash: FieldLike, source_hash: FieldLike, end_date: FieldLike, bond_amount: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -164,6 +167,9 @@ market_bond: {
 
     /** remove_from_whitelist(creator: struct) */
     remove_from_whitelist: ((creator: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** set_dependencies(amm: struct, oracle: struct, token: struct) */
+    set_dependencies: ((amm: AztecAddressLike, oracle: AztecAddressLike, token: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** sync_state() */
     sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

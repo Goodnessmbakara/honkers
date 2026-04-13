@@ -45,14 +45,14 @@ export class AMMContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, admin: AztecAddressLike, vault: AztecAddressLike, oracle: AztecAddressLike) {
+  public static deploy(wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<AMMContract>(PublicKeys.default(), wallet, AMMContractArtifact, (instance, wallet) => AMMContract.at(instance.address, wallet), Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike, vault: AztecAddressLike, oracle: AztecAddressLike) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<AMMContract>(publicKeys, wallet, AMMContractArtifact, (instance, wallet) => AMMContract.at(instance.address, wallet), Array.from(arguments).slice(2));
   }
 
@@ -90,7 +90,7 @@ export class AMMContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'admin' | 'vault' | 'oracle' | 'reserve_yes' | 'reserve_no' | 'invariant_k' | 'end_dates' | 'halted'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'vault' | 'oracle' | 'deps_set' | 'reserve_yes' | 'reserve_no' | 'invariant_k' | 'end_dates' | 'halted'> {
       return {
         admin: {
       slot: new Fr(1n),
@@ -99,32 +99,35 @@ vault: {
       slot: new Fr(2n),
     },
 oracle: {
+      slot: new Fr(3n),
+    },
+deps_set: {
       slot: new Fr(4n),
     },
 reserve_yes: {
-      slot: new Fr(6n),
+      slot: new Fr(5n),
     },
 reserve_no: {
-      slot: new Fr(7n),
+      slot: new Fr(6n),
     },
 invariant_k: {
-      slot: new Fr(8n),
+      slot: new Fr(7n),
     },
 end_dates: {
-      slot: new Fr(9n),
+      slot: new Fr(8n),
     },
 halted: {
-      slot: new Fr(10n),
+      slot: new Fr(9n),
     }
-      } as ContractStorageLayout<'admin' | 'vault' | 'oracle' | 'reserve_yes' | 'reserve_no' | 'invariant_k' | 'end_dates' | 'halted'>;
+      } as ContractStorageLayout<'admin' | 'vault' | 'oracle' | 'deps_set' | 'reserve_yes' | 'reserve_no' | 'invariant_k' | 'end_dates' | 'halted'>;
     }
     
 
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
-    /** constructor(admin: struct, vault: struct, oracle: struct) */
-    constructor: ((admin: AztecAddressLike, vault: AztecAddressLike, oracle: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(admin: struct) */
+    constructor: ((admin: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_price_no(market_id: field) */
     get_price_no: ((market_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -149,6 +152,9 @@ halted: {
 
     /** public_dispatch(selector: field) */
     public_dispatch: ((selector: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** set_dependencies(vault: struct, oracle: struct) */
+    set_dependencies: ((vault: AztecAddressLike, oracle: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** swap(market_id: field, side: field, amount_in: field) */
     swap: ((market_id: FieldLike, side: FieldLike, amount_in: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

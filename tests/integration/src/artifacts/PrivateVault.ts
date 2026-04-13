@@ -45,14 +45,14 @@ export class PrivateVaultContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, admin: AztecAddressLike, fee_recipient: AztecAddressLike, token: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike) {
+  public static deploy(wallet: Wallet, admin: AztecAddressLike, fee_recipient: AztecAddressLike) {
     return new DeployMethod<PrivateVaultContract>(PublicKeys.default(), wallet, PrivateVaultContractArtifact, (instance, wallet) => PrivateVaultContract.at(instance.address, wallet), Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike, fee_recipient: AztecAddressLike, token: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike, fee_recipient: AztecAddressLike) {
     return new DeployMethod<PrivateVaultContract>(publicKeys, wallet, PrivateVaultContractArtifact, (instance, wallet) => PrivateVaultContract.at(instance.address, wallet), Array.from(arguments).slice(2));
   }
 
@@ -90,7 +90,7 @@ export class PrivateVaultContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'paused' | 'collateral' | 'shares' | 'winnings'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'deps_set' | 'paused' | 'collateral' | 'shares' | 'winnings'> {
       return {
         admin: {
       slot: new Fr(1n),
@@ -102,24 +102,27 @@ token: {
       slot: new Fr(3n),
     },
 amm: {
-      slot: new Fr(5n),
+      slot: new Fr(4n),
     },
 oracle: {
-      slot: new Fr(7n),
+      slot: new Fr(5n),
+    },
+deps_set: {
+      slot: new Fr(6n),
     },
 paused: {
-      slot: new Fr(9n),
+      slot: new Fr(7n),
     },
 collateral: {
-      slot: new Fr(10n),
+      slot: new Fr(8n),
     },
 shares: {
-      slot: new Fr(11n),
+      slot: new Fr(9n),
     },
 winnings: {
-      slot: new Fr(12n),
+      slot: new Fr(10n),
     }
-      } as ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'paused' | 'collateral' | 'shares' | 'winnings'>;
+      } as ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'deps_set' | 'paused' | 'collateral' | 'shares' | 'winnings'>;
     }
     
 
@@ -132,8 +135,8 @@ winnings: {
     /** claim_winnings(market_id: field, fee_recipient: struct) */
     claim_winnings: ((market_id: FieldLike, fee_recipient: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(admin: struct, fee_recipient: struct, token: struct, amm: struct, oracle: struct) */
-    constructor: ((admin: AztecAddressLike, fee_recipient: AztecAddressLike, token: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(admin: struct, fee_recipient: struct) */
+    constructor: ((admin: AztecAddressLike, fee_recipient: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** deposit_collateral(amount: field) */
     deposit_collateral: ((amount: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -155,6 +158,9 @@ winnings: {
 
     /** refund_void_market(market_id: field) */
     refund_void_market: ((market_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** set_dependencies(token: struct, amm: struct, oracle: struct) */
+    set_dependencies: ((token: AztecAddressLike, amm: AztecAddressLike, oracle: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** settle_winnings(market_id: field, winning_side: field, block_number: field) */
     settle_winnings: ((market_id: FieldLike, winning_side: FieldLike, block_number: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
