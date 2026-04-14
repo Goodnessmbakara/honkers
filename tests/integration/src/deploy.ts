@@ -209,7 +209,7 @@ async function main() {
   const root = join(import.meta.dirname, "..", "..", "..");
 
   const frontendEnv = [
-    `VITE_AZTEC_RPC_URL=http://localhost:8080`,
+    `VITE_AZTEC_RPC_URL=/rpc`,
     `VITE_INDEXER_API_URL=http://localhost:3001`,
     `VITE_ADMIN_ADDRESS=${addresses.ADMIN_ADDRESS}`,
     `VITE_TEST_TOKEN_ADDRESS=${addresses.TEST_TOKEN_ADDRESS}`,

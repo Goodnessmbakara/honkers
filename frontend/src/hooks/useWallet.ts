@@ -24,13 +24,27 @@ export function useWallet() {
     syncing: false,
   });
 
-  // Restore previous session view-only state (until connect is called)
+  // Restore previous session: if PXE is ready and we have stored credentials,
+  // re-register the account with MinimalWallet so the app is fully functional.
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      setState({ connected: true, address: saved, syncing: false });
+    const savedSecret = localStorage.getItem(SECRET_KEY);
+    const savedAddress = localStorage.getItem(STORAGE_KEY);
+    if (savedSecret && savedAddress && pxeInstance && !state.syncing) {
+      // Show as connected immediately for UI responsiveness
+      setState((s) => (s.address === savedAddress ? s : { connected: true, address: savedAddress, syncing: true }));
+      // Then actually register the account
+      connect().catch((err) => {
+        console.error("[useWallet] Auto-reconnect failed:", err);
+        // Clear stale session on failure
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(SECRET_KEY);
+        setState({ connected: false, address: null, syncing: false });
+      });
+    } else if (savedAddress && !pxeInstance) {
+      // PXE not ready yet — show address but mark as not fully connected
+      setState((s) => (s.address === savedAddress ? s : { connected: true, address: savedAddress, syncing: false }));
     }
-  }, []);
+  }, [pxeInstance]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const connect = useCallback(async () => {
     if (!pxeInstance) {

@@ -6,7 +6,7 @@ import { Wallet, LogOut, WifiOff, RotateCcw } from "lucide-react";
 import { useWallet } from "../../hooks/useWallet";
 import { useCallback, useState } from "react";
 
-const PXE_DB_NAME = "aztec-pxe-honkers";
+const PXE_DB_NAME = "pxe/aztec-pxe-honkers";
 
 export function WalletConnect() {
   const { connected, address, syncing, connect, disconnect, walletLoading, walletError } = useWallet();
@@ -16,13 +16,20 @@ export function WalletConnect() {
     if (!confirm("This clears cached PXE data and reloads the page. Continue?")) return;
     setResetting(true);
     try {
-      // Clear IndexedDB
-      await new Promise<void>((resolve, reject) => {
-        const req = indexedDB.deleteDatabase(PXE_DB_NAME);
-        req.onsuccess = () => resolve();
-        req.onerror = () => reject(req.error);
-        req.onblocked = () => resolve(); // still succeeds on next reload
-      });
+      // Clear all IndexedDB databases related to PXE/Aztec
+      const dbs = await indexedDB.databases();
+      const toDelete = dbs.filter((db) => db.name?.includes("aztec") || db.name?.startsWith("pxe"));
+      await Promise.all(
+        toDelete.map(
+          (db) =>
+            new Promise<void>((resolve) => {
+              const req = indexedDB.deleteDatabase(db.name!);
+              req.onsuccess = () => resolve();
+              req.onerror = () => resolve(); // best-effort
+              req.onblocked = () => resolve();
+            }),
+        ),
+      );
       // Clear wallet session
       localStorage.removeItem("honkers:wallet-address");
       localStorage.removeItem("honkers:wallet-secret");
