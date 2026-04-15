@@ -9,18 +9,9 @@ import { usePortfolio } from "../hooks/usePortfolio";
 import { WinningRow } from "../components/portfolio/WinningRow";
 
 export function Winnings() {
-  const { connected, address } = useWallet();
+  const { address } = useWallet();
   const { winnings, claimWinnings, refresh } = usePortfolio(address);
   const [claimingId, setClaimingId] = useState<number | null>(null);
-
-  if (!connected) {
-    return (
-      <div className="page" style={{ textAlign: "center" }}>
-        <h2>Winnings</h2>
-        <p style={{ color: "var(--text-muted)" }}>Connect your wallet to view winnings.</p>
-      </div>
-    );
-  }
 
   const handleClaim = async (marketId: number) => {
     setClaimingId(marketId);

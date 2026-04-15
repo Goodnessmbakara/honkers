@@ -47,20 +47,34 @@ export function useMarkets(params?: { status?: string; page?: number; limit?: nu
     for (let id = 1; id < nextId; id++) {
       try {
         const info = await contract.methods.get_market_info(id).simulate();
+        if (!info) {
+          console.warn(`[useMarkets] Market ${id}: simulate returned undefined (stale contract address?)`);
+          continue;
+        }
         // info is a tuple: (questionHash, criteriaHash, sourceHash, creator, endDate, bond)
-        const [questionHash, criteriaHash, sourceHash, creator, endDate, bond] = info as [
-          bigint, bigint, bigint, { toString(): string }, bigint, bigint,
-        ];
+        const raw = info as unknown as unknown[];
+        const questionHash = raw[0] as bigint | undefined;
+        const criteriaHash = raw[1] as bigint | undefined;
+        const sourceHash = raw[2] as bigint | undefined;
+        const creator = raw[3] as { toString(): string } | undefined;
+        const endDate = raw[4] as bigint | undefined;
+        const bond = raw[5] as bigint | undefined;
+
+        if (questionHash == null || creator == null) {
+          console.warn(`[useMarkets] Market ${id}: incomplete data from chain, skipping`);
+          continue;
+        }
+
         const qHash = `0x${questionHash.toString(16).padStart(64, "0")}`;
         results.push({
           marketId: id,
           questionHash: qHash,
-          criteriaHash: `0x${criteriaHash.toString(16).padStart(64, "0")}`,
-          sourceHash: `0x${sourceHash.toString(16).padStart(64, "0")}`,
+          criteriaHash: criteriaHash != null ? `0x${criteriaHash.toString(16).padStart(64, "0")}` : "0x0",
+          sourceHash: sourceHash != null ? `0x${sourceHash.toString(16).padStart(64, "0")}` : "0x0",
           creator: creator.toString(),
-          endDate: Number(endDate),
-          bond: Number(bond),
-          status: Number(endDate) * 1000 > Date.now() ? "active" : "resolving",
+          endDate: endDate != null ? Number(endDate) : 0,
+          bond: bond != null ? Number(bond) : 0,
+          status: endDate != null && Number(endDate) * 1000 > Date.now() ? "active" : "resolving",
           createdAt: new Date().toISOString(),
           question: KNOWN_QUESTIONS[qHash],
         });

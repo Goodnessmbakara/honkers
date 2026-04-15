@@ -13,6 +13,7 @@ import { ProofProgress } from "../components/trading/ProofProgress";
 import { TxStatus } from "../components/trading/TxStatus";
 import { OddsDisplay } from "../components/market/OddsDisplay";
 import { PrivacyCallout } from "../components/safety/PrivacyCallout";
+import { WalletConnect } from "../components/wallet/WalletConnect";
 
 export function Trade() {
   const { id } = useParams<{ id: string }>();
@@ -71,9 +72,12 @@ export function Trade() {
       {!step && (
         <>
           {!connected ? (
-            <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "var(--space-8) 0" }}>
-              Connect your wallet to trade.
-            </p>
+            <div style={{ textAlign: "center", padding: "var(--space-8) 0" }}>
+              <p style={{ color: "var(--text-muted)", marginBottom: "var(--space-4)" }}>
+                Connect your wallet to trade.
+              </p>
+              <WalletConnect />
+            </div>
           ) : (
             <TradeForm
               yesPrice={market.yesPrice}

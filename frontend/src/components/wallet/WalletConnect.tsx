@@ -3,13 +3,11 @@
 // ---------------------------------------------------------------------------
 
 import { Wallet, LogOut, WifiOff, RotateCcw } from "lucide-react";
-import { useWallet } from "../../hooks/useWallet";
+import { useWalletContext } from "../../contexts/WalletContext";
 import { useCallback, useState } from "react";
 
-const PXE_DB_NAME = "pxe/aztec-pxe-honkers";
-
 export function WalletConnect() {
-  const { connected, address, syncing, connect, disconnect, walletLoading, walletError } = useWallet();
+  const { connected, address, syncing, connect, disconnect, walletLoading, walletError } = useWalletContext();
   const [resetting, setResetting] = useState(false);
 
   const resetPXE = useCallback(async () => {

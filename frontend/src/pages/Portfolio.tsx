@@ -11,17 +11,8 @@ import { PendingClaimBanner } from "../components/portfolio/PendingClaimBanner";
 import { PositionList } from "../components/portfolio/PositionList";
 
 export function Portfolio() {
-  const { connected, address } = useWallet();
+  const { address } = useWallet();
   const { balance, positions, winnings, loading } = usePortfolio(address);
-
-  if (!connected) {
-    return (
-      <div className="page" style={{ textAlign: "center" }}>
-        <h2 style={{ marginBottom: "var(--space-4)" }}>Portfolio</h2>
-        <p style={{ color: "var(--text-muted)" }}>Connect your wallet to view your portfolio.</p>
-      </div>
-    );
-  }
 
   return (
     <div className="page">

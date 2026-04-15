@@ -10,7 +10,7 @@ import { aztecConfig } from "../config/aztec";
 import { PrivacyCallout } from "../components/safety/PrivacyCallout";
 
 export function CreateMarket() {
-  const { connected, address } = useWallet();
+  const { address } = useWallet();
   const { simulateAndProve } = usePXE();
   const [question, setQuestion] = useState("");
   const [criteria, setCriteria] = useState("");
@@ -19,15 +19,6 @@ export function CreateMarket() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  if (!connected) {
-    return (
-      <div className="page" style={{ textAlign: "center" }}>
-        <h2>Create market</h2>
-        <p style={{ color: "var(--text-muted)" }}>Connect your wallet to create a market. Whitelist required.</p>
-      </div>
-    );
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -9,10 +9,8 @@
 
 import { useRef, useState } from "react";
 import { Download, Upload } from "lucide-react";
-import { useWallet } from "../hooks/useWallet";
 
 export function Backup() {
-  const { connected } = useWallet();
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -87,15 +85,6 @@ export function Backup() {
       "Notes are managed by the local embedded wallet."
     );
   };
-
-  if (!connected) {
-    return (
-      <div className="page" style={{ textAlign: "center" }}>
-        <h2>Backup</h2>
-        <p style={{ color: "var(--text-muted)" }}>Connect your wallet to manage backups.</p>
-      </div>
-    );
-  }
 
   return (
     <div className="page" style={{ maxWidth: 480, margin: "0 auto" }}>

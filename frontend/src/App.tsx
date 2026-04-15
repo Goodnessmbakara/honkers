@@ -6,6 +6,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AppShell } from "./components/layout/AppShell";
 import { ErrorBoundary } from "./components/safety/ErrorBoundary";
 import { AztecProvider } from "./components/AztecProvider";
+import { WalletProvider } from "./contexts/WalletContext";
+import { ProtectedRoute } from "./components/auth/ProtectedRoute";
 
 // Pages
 import { Landing } from "./pages/Landing";
@@ -33,35 +35,39 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AztecProvider>
-        <BrowserRouter>
-        <Routes>
-          {/* Public shell routes */}
-          <Route element={<AppShell />}>
-            <Route index element={<Landing />} />
-            <Route path="markets" element={<Markets />} />
-            <Route path="markets/:id" element={<MarketDetail />} />
-            <Route path="trade/:id" element={<Trade />} />
-            <Route path="portfolio" element={<Portfolio />} />
-            <Route path="winnings" element={<Winnings />} />
-            <Route path="faucet" element={<Faucet />} />
-            <Route path="create" element={<CreateMarket />} />
-            <Route path="settings" element={<Settings />} />
-            <Route path="backup" element={<Backup />} />
-            <Route path="privacy" element={<Privacy />} />
-            <Route path="terms" element={<Terms />} />
-            <Route path="risk" element={<Risk />} />
+        <WalletProvider>
+          <BrowserRouter>
+          <Routes>
+            {/* Public shell routes */}
+            <Route element={<AppShell />}>
+              <Route index element={<Landing />} />
+              <Route path="markets" element={<Markets />} />
+              <Route path="markets/:id" element={<MarketDetail />} />
+              <Route path="trade/:id" element={<Trade />} />
+              <Route path="privacy" element={<Privacy />} />
+              <Route path="terms" element={<Terms />} />
+              <Route path="risk" element={<Risk />} />
+              <Route path="settings" element={<Settings />} />
 
-            {/* Admin */}
-            <Route path="admin" element={<AdminHome />} />
-            <Route path="admin/market/:id" element={<AdminMarket />} />
-          </Route>
+              {/* Protected routes — require wallet connection */}
+              <Route element={<ProtectedRoute />}>
+                <Route path="portfolio" element={<Portfolio />} />
+                <Route path="winnings" element={<Winnings />} />
+                <Route path="faucet" element={<Faucet />} />
+                <Route path="create" element={<CreateMarket />} />
+                <Route path="backup" element={<Backup />} />
+                <Route path="admin" element={<AdminHome />} />
+                <Route path="admin/market/:id" element={<AdminMarket />} />
+              </Route>
+            </Route>
 
-          {/* Standalone pages (no shell) */}
-          <Route path="geo-blocked" element={<GeoBlocked />} />
-          <Route path="network-error" element={<NetworkError />} />
-          <Route path="maintenance" element={<Maintenance />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Standalone pages (no shell) */}
+            <Route path="geo-blocked" element={<GeoBlocked />} />
+            <Route path="network-error" element={<NetworkError />} />
+            <Route path="maintenance" element={<Maintenance />} />
+          </Routes>
+        </BrowserRouter>
+        </WalletProvider>
       </AztecProvider>
     </ErrorBoundary>
   );

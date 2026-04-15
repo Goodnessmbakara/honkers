@@ -9,18 +9,9 @@ import { useWallet } from "../hooks/useWallet";
 import { useFaucet } from "../hooks/useFaucet";
 
 export function Faucet() {
-  const { connected, address } = useWallet();
+  const { address } = useWallet();
   const { request, loading, error, txHash, maxAmount } = useFaucet(address);
   const [amount, setAmount] = useState("10");
-
-  if (!connected) {
-    return (
-      <div className="page" style={{ textAlign: "center" }}>
-        <h2>Testnet faucet</h2>
-        <p style={{ color: "var(--text-muted)" }}>Connect your wallet to request testnet USDC.</p>
-      </div>
-    );
-  }
 
   return (
     <div className="page" style={{ maxWidth: 480, margin: "0 auto" }}>
