@@ -6,15 +6,16 @@ pub contract MarketFactory {
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
         protocol::{address::AztecAddress, traits::ToField},
-        state_vars::{Map, PublicImmutable, PublicMutable},
+        state_vars::{Map, PublicMutable},
     };
 
     #[storage]
     struct Storage<Context> {
         admin: PublicMutable<AztecAddress, Context>,
-        amm: PublicImmutable<AztecAddress, Context>,
-        oracle: PublicImmutable<AztecAddress, Context>,
-        token: PublicImmutable<AztecAddress, Context>,
+        amm: PublicMutable<AztecAddress, Context>,
+        oracle: PublicMutable<AztecAddress, Context>,
+        token: PublicMutable<AztecAddress, Context>,
+        deps_set: PublicMutable<Field, Context>,
         next_market_id: PublicMutable<Field, Context>,
         whitelist: Map<Field, PublicMutable<Field, Context>, Context>,
         market_question_hash: Map<Field, PublicMutable<Field, Context>, Context>,
@@ -27,12 +28,21 @@ pub contract MarketFactory {
 
     #[initializer]
     #[external("public")]
-    fn constructor(admin: AztecAddress, amm: AztecAddress, oracle: AztecAddress, token: AztecAddress) {
+    fn constructor(admin: AztecAddress) {
         self.storage.admin.write(admin);
-        self.storage.amm.initialize(amm);
-        self.storage.oracle.initialize(oracle);
-        self.storage.token.initialize(token);
         self.storage.next_market_id.write(1);
+        self.storage.deps_set.write(0);
+    }
+
+    #[external("public")]
+    fn set_dependencies(amm: AztecAddress, oracle: AztecAddress, token: AztecAddress) {
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can set dependencies");
+        assert(self.storage.deps_set.read() == 0, "Dependencies already set");
+        self.storage.amm.write(amm);
+        self.storage.oracle.write(oracle);
+        self.storage.token.write(token);
+        self.storage.deps_set.write(1);
     }
 
     #[external("public")]

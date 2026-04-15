@@ -6,7 +6,7 @@ pub contract AMM {
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
         protocol::address::AztecAddress,
-        state_vars::{Map, PublicImmutable, PublicMutable},
+        state_vars::{Map, PublicMutable},
     };
 
     global SCALE: Field = 1000000;
@@ -14,8 +14,9 @@ pub contract AMM {
     #[storage]
     struct Storage<Context> {
         admin: PublicMutable<AztecAddress, Context>,
-        vault: PublicImmutable<AztecAddress, Context>,
-        oracle: PublicImmutable<AztecAddress, Context>,
+        vault: PublicMutable<AztecAddress, Context>,
+        oracle: PublicMutable<AztecAddress, Context>,
+        deps_set: PublicMutable<Field, Context>,
         reserve_yes: Map<Field, PublicMutable<Field, Context>, Context>,
         reserve_no: Map<Field, PublicMutable<Field, Context>, Context>,
         invariant_k: Map<Field, PublicMutable<Field, Context>, Context>,
@@ -25,10 +26,19 @@ pub contract AMM {
 
     #[initializer]
     #[external("public")]
-    fn constructor(admin: AztecAddress, vault: AztecAddress, oracle: AztecAddress) {
+    fn constructor(admin: AztecAddress) {
         self.storage.admin.write(admin);
-        self.storage.vault.initialize(vault);
-        self.storage.oracle.initialize(oracle);
+        self.storage.deps_set.write(0);
+    }
+
+    #[external("public")]
+    fn set_dependencies(vault: AztecAddress, oracle: AztecAddress) {
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can set dependencies");
+        assert(self.storage.deps_set.read() == 0, "Dependencies already set");
+        self.storage.vault.write(vault);
+        self.storage.oracle.write(oracle);
+        self.storage.deps_set.write(1);
     }
 
     #[external("public")]

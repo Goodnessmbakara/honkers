@@ -48,6 +48,26 @@ export function useAztecWallet() {
 // ---------------------------------------------------------------------------
 let pxePromise: Promise<SharedPXEInstance> | null = null;
 
+const PXE_DB_NAME = "pxe/aztec-pxe-honkers";
+const ROLLUP_KEY = "honkers:rollup-address";
+
+/**
+ * Delete the PXE IndexedDB so a fresh sync can start.
+ * Called when we detect the sandbox was restarted (rollup address changed).
+ */
+async function nukeStaleDB() {
+  const dbs = await indexedDB.databases?.();
+  const targets = dbs
+    ? dbs.filter((d) => d.name && (d.name.includes("aztec") || d.name.startsWith("pxe")))
+    : [{ name: PXE_DB_NAME }];
+  for (const db of targets) {
+    if (db.name) {
+      console.log(`[pxe] Deleting stale IndexedDB: ${db.name}`);
+      indexedDB.deleteDatabase(db.name);
+    }
+  }
+}
+
 export async function getOrCreatePXE(nodeUrl: string): Promise<SharedPXEInstance> {
   if (pxePromise) return pxePromise;
 
@@ -76,7 +96,38 @@ export async function getOrCreatePXE(nodeUrl: string): Promise<SharedPXEInstance
     console.log(`[pxe] [${elapsed()}] Connecting to Aztec node @ ${nodeUrl}...`);
     const aztecNode = createAztecNodeClient(nodeUrl);
     const l1Contracts = await aztecNode.getL1ContractAddresses();
-    console.log(`[pxe] [${elapsed()}] Node connected ✓ rollup=${l1Contracts.rollupAddress}`);
+    const rollupAddr = l1Contracts.rollupAddress.toString();
+    console.log(`[pxe] [${elapsed()}] Node connected ✓ rollup=${rollupAddr}`);
+
+    // ── Step 2b: Detect sandbox restart ─────────────────────────────────────
+    // When the sandbox restarts, L1 contracts are redeployed with a new rollup
+    // address. Any cached PXE block data is now stale and will cause
+    // "Block hash not found" errors. Nuke the old DB so the PXE syncs fresh.
+    const prevRollup = localStorage.getItem(ROLLUP_KEY);
+    if (prevRollup && prevRollup !== rollupAddr) {
+      console.warn(
+        `[pxe] Sandbox restarted! Rollup changed from ${prevRollup} → ${rollupAddr}. ` +
+          "Clearing stale PXE database..."
+      );
+      await nukeStaleDB();
+      // Also clear stale wallet session — the old account contract no longer exists
+      localStorage.removeItem("honkers:wallet-address");
+      localStorage.removeItem("honkers:wallet-secret");
+    } else if (!prevRollup) {
+      // First run with rollup tracking — any existing PXE DB may be stale
+      // from before this detection was added. Nuke it to be safe.
+      const dbs = await indexedDB.databases?.();
+      const hasExistingDB = dbs?.some(
+        (d) => d.name && (d.name.includes("aztec") || d.name.startsWith("pxe"))
+      );
+      if (hasExistingDB) {
+        console.warn("[pxe] First run with rollup tracking — clearing potentially stale PXE data");
+        await nukeStaleDB();
+        localStorage.removeItem("honkers:wallet-address");
+        localStorage.removeItem("honkers:wallet-secret");
+      }
+    }
+    localStorage.setItem(ROLLUP_KEY, rollupAddr);
 
     // ── Step 3: PXE config ──────────────────────────────────────────────────
     const config = getPXEConfig();

@@ -45,14 +45,14 @@ export class OracleContract extends ContractBase {
   /**
    * Creates a tx to deploy a new instance of this contract.
    */
-  public static deploy(wallet: Wallet, admin: AztecAddressLike, amm: AztecAddressLike) {
+  public static deploy(wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<OracleContract>(PublicKeys.default(), wallet, OracleContractArtifact, (instance, wallet) => OracleContract.at(instance.address, wallet), Array.from(arguments).slice(1));
   }
 
   /**
    * Creates a tx to deploy a new instance of this contract using the specified public keys hash to derive the address.
    */
-  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike, amm: AztecAddressLike) {
+  public static deployWithPublicKeys(publicKeys: PublicKeys, wallet: Wallet, admin: AztecAddressLike) {
     return new DeployMethod<OracleContract>(publicKeys, wallet, OracleContractArtifact, (instance, wallet) => OracleContract.at(instance.address, wallet), Array.from(arguments).slice(2));
   }
 
@@ -90,13 +90,16 @@ export class OracleContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'admin' | 'amm' | 'resolution_state' | 'proposed_outcome' | 'proposed_at' | 'end_dates' | 'dispute_bond' | 'disputer'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'amm' | 'deps_set' | 'resolution_state' | 'proposed_outcome' | 'proposed_at' | 'end_dates' | 'dispute_bond' | 'disputer'> {
       return {
         admin: {
       slot: new Fr(1n),
     },
 amm: {
       slot: new Fr(2n),
+    },
+deps_set: {
+      slot: new Fr(3n),
     },
 resolution_state: {
       slot: new Fr(4n),
@@ -116,7 +119,7 @@ dispute_bond: {
 disputer: {
       slot: new Fr(9n),
     }
-      } as ContractStorageLayout<'admin' | 'amm' | 'resolution_state' | 'proposed_outcome' | 'proposed_at' | 'end_dates' | 'dispute_bond' | 'disputer'>;
+      } as ContractStorageLayout<'admin' | 'amm' | 'deps_set' | 'resolution_state' | 'proposed_outcome' | 'proposed_at' | 'end_dates' | 'dispute_bond' | 'disputer'>;
     }
     
 
@@ -126,8 +129,8 @@ disputer: {
     /** challenge_seconds_remaining(market_id: field, current_timestamp: field) */
     challenge_seconds_remaining: ((market_id: FieldLike, current_timestamp: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** constructor(admin: struct, amm: struct) */
-    constructor: ((admin: AztecAddressLike, amm: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** constructor(admin: struct) */
+    constructor: ((admin: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** dispute_resolution(market_id: field, bond_amount: field) */
     dispute_resolution: ((market_id: FieldLike, bond_amount: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -170,6 +173,9 @@ disputer: {
 
     /** resolve_dispute(market_id: field, new_outcome: field) */
     resolve_dispute: ((market_id: FieldLike, new_outcome: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** set_dependencies(amm: struct) */
+    set_dependencies: ((amm: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** sync_state() */
     sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

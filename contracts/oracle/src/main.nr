@@ -6,7 +6,7 @@ pub contract Oracle {
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
         protocol::address::AztecAddress,
-        state_vars::{Map, PublicImmutable, PublicMutable},
+        state_vars::{Map, PublicMutable},
     };
 
     global CHALLENGE_WINDOW: Field = 86400;
@@ -21,7 +21,8 @@ pub contract Oracle {
     #[storage]
     struct Storage<Context> {
         admin: PublicMutable<AztecAddress, Context>,
-        amm: PublicImmutable<AztecAddress, Context>,
+        amm: PublicMutable<AztecAddress, Context>,
+        deps_set: PublicMutable<Field, Context>,
         resolution_state: Map<Field, PublicMutable<Field, Context>, Context>,
         proposed_outcome: Map<Field, PublicMutable<Field, Context>, Context>,
         proposed_at: Map<Field, PublicMutable<Field, Context>, Context>,
@@ -32,9 +33,18 @@ pub contract Oracle {
 
     #[initializer]
     #[external("public")]
-    fn constructor(admin: AztecAddress, amm: AztecAddress) {
+    fn constructor(admin: AztecAddress) {
         self.storage.admin.write(admin);
-        self.storage.amm.initialize(amm);
+        self.storage.deps_set.write(0);
+    }
+
+    #[external("public")]
+    fn set_dependencies(amm: AztecAddress) {
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can set dependencies");
+        assert(self.storage.deps_set.read() == 0, "Dependencies already set");
+        self.storage.amm.write(amm);
+        self.storage.deps_set.write(1);
     }
 
     #[external("public")]

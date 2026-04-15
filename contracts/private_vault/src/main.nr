@@ -16,7 +16,7 @@ pub contract PrivateVault {
         messages::message_delivery::MessageDelivery,
         note::note_getter_options::NoteGetterOptions,
         protocol::{address::AztecAddress, constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL},
-        state_vars::{Owned, PrivateSet, PublicImmutable, PublicMutable},
+        state_vars::{Owned, PrivateSet, PublicMutable},
     };
 
     global PLATFORM_FEE_NUMERATOR: Field = 3;
@@ -26,9 +26,10 @@ pub contract PrivateVault {
     struct Storage<Context> {
         admin: PublicMutable<AztecAddress, Context>,
         fee_recipient: PublicMutable<AztecAddress, Context>,
-        token: PublicImmutable<AztecAddress, Context>,
-        amm: PublicImmutable<AztecAddress, Context>,
-        oracle: PublicImmutable<AztecAddress, Context>,
+        token: PublicMutable<AztecAddress, Context>,
+        amm: PublicMutable<AztecAddress, Context>,
+        oracle: PublicMutable<AztecAddress, Context>,
+        deps_set: PublicMutable<Field, Context>,
         paused: PublicMutable<Field, Context>,
         collateral: Owned<PrivateSet<CollateralNote, Context>, Context>,
         shares: Owned<PrivateSet<ShareNote, Context>, Context>,
@@ -37,19 +38,22 @@ pub contract PrivateVault {
 
     #[initializer]
     #[external("public")]
-    fn constructor(
-        admin: AztecAddress,
-        fee_recipient: AztecAddress,
-        token: AztecAddress,
-        amm: AztecAddress,
-        oracle: AztecAddress,
-    ) {
+    fn constructor(admin: AztecAddress, fee_recipient: AztecAddress) {
         self.storage.admin.write(admin);
         self.storage.fee_recipient.write(fee_recipient);
-        self.storage.token.initialize(token);
-        self.storage.amm.initialize(amm);
-        self.storage.oracle.initialize(oracle);
         self.storage.paused.write(0);
+        self.storage.deps_set.write(0);
+    }
+
+    #[external("public")]
+    fn set_dependencies(token: AztecAddress, amm: AztecAddress, oracle: AztecAddress) {
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can set dependencies");
+        assert(self.storage.deps_set.read() == 0, "Dependencies already set");
+        self.storage.token.write(token);
+        self.storage.amm.write(amm);
+        self.storage.oracle.write(oracle);
+        self.storage.deps_set.write(1);
     }
 
     #[external("private")]

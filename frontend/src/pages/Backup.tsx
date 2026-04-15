@@ -17,11 +17,66 @@ export function Backup() {
   const [status, setStatus] = useState<string | null>(null);
 
   const handleExport = async () => {
-    setStatus(
-      "Notes are stored in your browser's IndexedDB. " +
-      "Use your browser's DevTools → Application → IndexedDB to back up the database. " +
-      "Full SDK-level export support is planned."
-    );
+    try {
+      setStatus("Exporting…");
+      const dbs = await indexedDB.databases();
+      const aztecDbs = dbs.filter((db) => db.name?.includes("aztec") || db.name?.startsWith("pxe"));
+      if (aztecDbs.length === 0) {
+        setStatus("No Aztec databases found in IndexedDB.");
+        return;
+      }
+
+      const backup: Record<string, Record<string, unknown[]>> = {};
+
+      for (const dbInfo of aztecDbs) {
+        const dbName = dbInfo.name!;
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+          const req = indexedDB.open(dbName);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        const stores: Record<string, unknown[]> = {};
+        const storeNames = Array.from(db.objectStoreNames);
+
+        for (const storeName of storeNames) {
+          const tx = db.transaction(storeName, "readonly");
+          const store = tx.objectStore(storeName);
+          const records = await new Promise<unknown[]>((resolve, reject) => {
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+          });
+          stores[storeName] = records;
+        }
+
+        backup[dbName] = stores;
+        db.close();
+      }
+
+      // Also export wallet localStorage keys
+      const lsBackup: Record<string, string> = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)!;
+        if (key.startsWith("honkers:")) {
+          lsBackup[key] = localStorage.getItem(key)!;
+        }
+      }
+
+      const payload = { version: 1, exportedAt: new Date().toISOString(), indexedDB: backup, localStorage: lsBackup };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `honkers-backup-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setStatus("Backup exported successfully.");
+    } catch (err) {
+      setStatus(`Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -19,7 +19,8 @@ interface PxeHealth {
 }
 
 export function usePXE() {
-  const { wallet } = useAztecWallet();
+  const { pxeInstance } = useAztecWallet();
+  const wallet = pxeInstance?.wallet ?? null;
   const [health, setHealth] = useState<PxeHealth>({ ok: false, blockNumber: null, error: null });
   const abortRef = useRef<AbortController | null>(null);
 

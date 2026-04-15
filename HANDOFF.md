@@ -1,253 +1,189 @@
 # Honkers — Handoff Document
 
-> Last updated: April 11, 2026
-> Branch: `main`
-> Aztec SDK: v4.1.3 | Noir: v0.35.0+ | Nargo: v0.75.0
+Status snapshot for co-contributors picking up the project.
+Last updated: 2026-04-14
 
 ---
 
-## Project Summary
+## What's Done
 
-Honkers is a **private prediction market** built on Aztec Network. Users trade YES/NO outcome shares via a constant-product AMM, with positions kept private through Aztec's zero-knowledge execution layer. The platform runs PXE (Private Execution Environment) entirely in the browser — no server ever sees private notes or balances.
+### Contracts (Phase 1 — complete)
+- **All 5 contracts ported** from Aztec v0.75.0 to v4.1.3 and compile clean
+- **Two-phase initialization** on AMM, Oracle, PrivateVault, MarketFactory to break circular deployment dependency (PublicImmutable changed to PublicMutable + one-time `set_dependencies()`)
+- **TestToken** unchanged (no circular deps)
+- **Codegen regenerated** via `aztec codegen` — TypeScript wrappers in `tests/integration/src/artifacts/`
+- **Deploy script** at `tests/integration/src/deploy.ts` — deploys all 5 contracts + wires dependencies + writes `.env` files
 
----
+### Frontend Infrastructure
+- **In-browser PXE** via `@aztec/pxe/client/bundle` (WASM + IndexedDB `pxe/aztec-pxe-honkers`)
+- **MinimalWallet** bridge (`BaseWallet` subclass) for `AccountManager`
+- **Vite config** — WASM exclusions, CJS includes, node shims, COOP/COEP headers, `/rpc` proxy
+- **Wallet connect flow** — `useWallet` hook with Schnorr account creation via `AccountManager`
+- **Auto-reconnect** — `useWallet` re-registers the account with MinimalWallet on page reload when PXE is ready + stored credentials exist (no longer just restores address string)
+- **Sandbox restart detection** — `useAztecWallet` tracks the L1 rollup address; automatically nukes stale IndexedDB + clears wallet credentials when the sandbox rolls to a new rollup address
+- **Reset PXE button** — enumerates all IndexedDB databases matching `aztec` or `pxe` and deletes them all
+- **Export backup** — dumps all Aztec/PXE IndexedDB databases + `honkers:*` localStorage keys to a JSON download
+- **On-chain market fallback** — `useMarkets` tries the indexer API first; on failure falls back to reading `MarketFactory.get_next_market_id()` + `get_market_info(id)` directly via simulate calls
+- **usePXE bug fixed** — was reading wallet from wrong context property
 
-## Architecture
+### Market Creation Script
+- `tests/integration/src/create-market.ts` — standalone Node.js script
+- Uses server-side PXE (`@aztec/pxe/server`) with `AdminWallet`
+- Whitelists admin → hashes question/criteria/source (SHA-256, truncated to 31 bytes for field) → `MarketFactory.create_market()` → `Oracle.register_market()`
+- Successfully created test market: "Will Bola Ahmed Tinubu win the 2027 Nigerian Presidential Election?" (hash `0x00a22e5706261089c02407859a5b71b7ff4d95c89d0da2479cfa89d1fc9895be`)
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  Browser                                                  │
-│  ┌──────────┐  ┌──────────┐  ┌─────────────────────────┐ │
-│  │ React UI │─▶│useWallet │─▶│ PXE (WASM, IndexedDB)   │ │
-│  │ (Vite)   │  │useTrade  │  │ AccountManager + Schnorr │ │
-│  └──────────┘  └──────────┘  └───────────┬─────────────┘ │
-└──────────────────────────────────────────┼────────────────┘
-                                           │ JSON-RPC (via /rpc proxy)
-                              ┌────────────▼────────────┐
-                              │  Aztec Sandbox (L2)      │
-                              │  localhost:8080           │
-                              └────────────┬────────────┘
-                                           │
-┌──────────────────────────────────────────┼────────────────┐
-│  Backend services                        │                 │
-│  ┌───────────┐  ┌───────────┐  ┌────────▼──────┐         │
-│  │  Keeper   │  │  Indexer  │  │  PostgreSQL   │         │
-│  │  (cron)   │  │  (poll)   │──│  (honkers db) │         │
-│  └───────────┘  └───────────┘  └───────────────┘         │
-└───────────────────────────────────────────────────────────┘
-```
-
----
-
-## What's Been Built (Completed Work)
-
-### Smart Contracts (5 Noir contracts — all compile)
-| Contract | Purpose | Status |
-|----------|---------|--------|
-| **PrivateVault** | CollateralNote, ShareNote, WinningNote schemas; 3% platform fee | Core logic done |
-| **AMM** | CPMM (x*y=k), public reserves, market init/halt | Core logic done |
-| **Oracle** | Propose → Dispute → Finalise lifecycle, 24h challenge window, 72h grace, auto-void | Core logic done |
-| **MarketFactory** | Market creation, creator whitelist, bond tracking | Core logic done |
-| **TestToken** | Testnet USDC mock, faucet with 1h cooldown, 100 USDC max drip | Core logic done |
-
-### Frontend (Vite + React 19)
-- **Wallet connection**: In-browser PXE via `createPXE` from `@aztec/pxe/client/bundle`, IndexedDB persistence, `MinimalWallet` bridge, `AccountManager` + `SchnorrAccountContract` for account creation
-- **Vite config**: Full WASM compatibility — `optimizeDeps.exclude` for `@aztec/*`, COOP/COEP headers for SharedArrayBuffer, Node.js builtin shims, `/rpc` proxy to sandbox
-- **Pages scaffolded**: Landing, Markets, Trade, Portfolio, Winnings, CreateMarket, Admin, Faucet, Terms, Risk, Privacy, GeoBlocked (15+ routes)
-- **Component structure**: Organized by domain — wallet, trading, portfolio, admin, safety
-- **Hooks**: `useWallet`, `useTrade`, `useFaucet`, `useAztecWallet`
-- **Favicon and meta tags** configured
-
-### Indexer (Node.js + Express + PostgreSQL)
-- Express server with CORS, helmet, health endpoints
-- PostgreSQL schema: `markets`, `resolutions`, `amm_snapshots` tables
-- Event listener structure polling Aztec L2 blocks
-- REST API: `/api/markets`, `/api/resolution`
-
-### Keeper Bot (Node.js)
-- Job orchestration: `pollMarketExpiry`, `triggerAutoVoid`, `monitorHealth`
-- Slack webhook + PagerDuty alerting (optional)
-
-### Infrastructure
-- **Docker Compose**: Full local stack — Aztec Sandbox, PostgreSQL, Indexer, Keeper, Frontend with health checks and dependency ordering
-- **Dockerfiles**: Frontend, Indexer, Keeper
-- **SETUP.md**: Complete setup guide with Docker Compose quick-start and manual setup paths
+### Deployment
+- Contracts deploy successfully to sandbox via `npx tsx src/deploy.ts`
+- `.env` files auto-generated for both root and `frontend/`
+- Database schema migration works (`indexer/src/db/migrate.ts`)
 
 ### Documentation
-- `PHASES.md` — 3-phase rollout roadmap
-- `SRS.md` — Software requirements specification
-- `ideation.md` — Design decisions and trade-offs
-- `AZTEC_WALLET_CONNECT_GUIDE.md` — Browser wallet integration reference
-- `SETUP.md` — Development environment setup
+- SETUP.md updated for v4.1.3 (deploy instructions, env vars, troubleshooting, changelog)
+- AZTEC_WALLET_CONNECT_GUIDE.md — comprehensive guide for in-browser PXE + wallet
 
-### Testing (partial)
-- Noir unit tests (`nargo test`) for AMM math, note hashing — passing
-- Integration test scaffold in `tests/integration/` — placeholder, ready for implementation
-- E2E test scaffold in `tests/e2e/` — Playwright specs outlined
-
----
-
-## What's NOT Done Yet (Next Steps)
-
-### Priority 1 — Complete the Trading Loop (Critical Path)
-
-These items complete the minimum viable user flow: **connect → fund → trade → resolve → claim**.
-
-1. **Contract deployment script**
-   - Write a deployment script that deploys all 5 contracts to the sandbox in order (TestToken → PrivateVault → AMM → Oracle → MarketFactory)
-   - Populate `frontend/.env` with deployed contract addresses
-   - Location: needs new file, e.g. `scripts/deploy.ts`
-
-2. **Contract integration tests**
-   - Implement the E2E test in `tests/integration/src/e2e.test.ts`
-   - Cover: deploy → create market → trade YES → trade NO → resolve → claim winnings
-   - This will surface any contract bugs before frontend integration
-
-3. **Frontend ↔ Contract integration**
-   - Wire `useTrade` hook to actually call AMM contract methods (currently structural/stubbed)
-   - Wire `useFaucet` hook to call TestToken faucet
-   - Wire portfolio page to read PXE notes (ShareNote, WinningNote)
-   - Wire market list to fetch from indexer API + merge with on-chain state
-
-4. **Indexer event parsing**
-   - Complete `eventListener.ts` TODOs: map storage slot derivation for MarketFactory, Oracle, AMM
-   - Implement volume aggregation from trade events (currently returns null)
-
-5. **Proof generation UX**
-   - FR-T-2: Progress indicator during local ZK proof generation
-   - FR-T-3: Error handling and retry for proof failures
-
-### Priority 2 — Polish for Internal Testing
-
-6. **Wrong network detection** (FR-W-2)
-   - Detect incompatible PXE or wrong sandbox URL, show recovery steps
-
-7. **Market detail view** (FR-M-2)
-   - Resolution criteria, source, creator info, schedule, status badge
-
-8. **Trading disabled state** (FR-M-3)
-   - Disable trade form when `now > end_date`
-
-9. **Backup & recovery** (FR-B-1, FR-B-2, FR-B-3)
-   - Export/import encrypted PXE note backup
-   - Persistent banner until user acknowledges
-
-10. **Admin console** (FR-A-1 through FR-A-5)
-    - Resolution workflow, dispute window status, emergency pause
-
-### Priority 3 — Beta Launch Readiness
-
-11. **Sentry error tracking** — integrate, ensure no PII in logs
-12. **Geo-blocking** — Vercel edge middleware for restricted jurisdictions
-13. **Monitoring** — BetterStack/UptimeRobot for keeper and indexer health
-14. **Seeded markets** — Create 20+ markets for public testnet launch
-15. **Frontend E2E tests** — Playwright browser tests for critical flows
+### Reusable SDK (aztec-connect/)
+- Standalone package at root with three entry points:
+  - Core: `getOrCreatePXE()`, `connectAccount()`, `MinimalWallet`
+  - React: `AztecConnectProvider`, `useAccount()`, `useAztecConnect()`
+  - Vite: `aztecVitePlugin()` — one-line Vite config for Aztec
+- TypeScript compiles clean
 
 ---
 
-## Key Technical Decisions & Context
+## Known Bugs (Open)
 
-### Why in-browser PXE instead of remote PXE?
-Privacy. The PXE holds decrypted notes and private state. Running it in-browser means no server ever sees user positions or balances. Trade-off: heavier client load (WASM compilation, IndexedDB).
+### B1 — Faucet fails: "Assertion failed: Failed to get a note 'self.is_some()'"
+- **Root cause**: The user's Schnorr account contract is **registered in PXE but not deployed on-chain**. In Aztec v4, all `.send()` transactions — even for `#[external("public")]` functions like `faucet` — route through the account contract's entrypoint. The entrypoint tries to read its signing-key note, which doesn't exist if the contract isn't deployed.
+- **Why deployment doesn't happen**: `useWallet.ts` has deployment logic (`hasInitializer()` → `getDeployMethod()` → `send().wait()`), but the console logs show no "Deploying account contract..." message. The `hasInitializer()` check or `getContractInstance()` lookup may be incorrectly skipping deployment. Additionally, after a sandbox restart + DB nuke, the wallet generates a new random secret (old one cleared), so the account contract address changes and is definitely undeployed.
+- **Where to fix**: `frontend/src/hooks/useWallet.ts` lines 96-106 — the account deployment block. Investigate whether `hasInitializer()` returns `false` for `SchnorrAccountContract` or whether `getContractInstance()` is returning a stale result.
+- **Second error on retry**: "Failed to execute 'get' on 'IDBObjectStore': The transaction has finished" — This is an IndexedDB transaction lifetime issue in the PXE's kv-store. May be related to the stale DB nuke running during PXE init; the store reference becomes invalid. Needs investigation.
 
-### Why CPMM instead of LMSR?
-Simpler Noir implementation, well-understood math. LMSR evaluation deferred to Phase 2 — exponential arithmetic in Noir circuits is expensive and may require recursive proof verification.
+### B2 — Markets page: "Cannot read properties of undefined (reading 'toString')"
+- **Root cause**: The on-chain fallback in `useMarkets.ts` calls `Contract.at(factoryAddr, artifact, wallet)` then `contract.methods.get_market_info(id).simulate()`. The returned tuple destructures `creator` and calls `.toString()` on it. If the MarketFactory contract address in `.env` is stale (from a previous sandbox session), the simulate call returns `undefined` results.
+- **When it happens**: After any sandbox restart, the contract addresses in `frontend/.env` no longer exist on-chain. The `.env` must be refreshed by rerunning `npx tsx src/deploy.ts`.
+- **Where to fix**: `frontend/src/hooks/useMarkets.ts` `fetchFromChain()` — needs null-guarding on the simulate result. Also the deploy script should be re-run after every sandbox restart.
 
-### Why Vite needs so much config?
-Aztec SDK uses WASM (`@aztec/bb.js`, `@aztec/noir-acvm_js`), SharedArrayBuffer (Barretenberg threading), and Node.js built-ins. Each requires specific Vite handling. The `AZTEC_WALLET_CONNECT_GUIDE.md` documents all the gotchas.
+### B3 — Wallet `connect()` fires multiple times
+- Console shows `[useWallet] Registering account ...` and `Connected:` logged 2-3 times per page load. This is React StrictMode double-invoking effects. Harmless but noisy — could add a guard ref to deduplicate.
 
-### Secret key storage
-Currently localStorage (acceptable for testnet). Production requires encrypted storage or KDF-derived keys from a user passphrase. Tracked for Phase 2.
-
-### Account model
-One Schnorr account per secret, fixed salt (`Fr.ZERO`). Multi-account support (random salt per account) is straightforward but not yet exposed in UI.
-
----
-
-## File Map (Key Files)
-
-```
-contracts/
-  private_vault/src/main.nr    — PrivateVault contract
-  amm/src/main.nr              — CPMM AMM
-  oracle/src/main.nr           — Resolution oracle
-  market_factory/src/main.nr   — Market creation
-  test_token/src/main.nr       — Testnet USDC faucet
-
-frontend/
-  src/config/aztec.ts           — PXE URL + contract addresses
-  src/hooks/useAztecWallet.ts   — PXE singleton + context
-  src/hooks/useWallet.ts        — Connect/disconnect flow
-  src/hooks/useTrade.ts         — Trade execution (needs wiring)
-  src/hooks/useFaucet.ts        — Faucet interaction (needs wiring)
-  src/utils/MinimalWallet.ts    — PXE-to-Wallet bridge
-  src/components/AztecProvider.tsx — Root provider
-  src/components/wallet/WalletConnect.tsx — Connect button
-  vite.config.ts                — WASM/polyfill/proxy config
-
-indexer/
-  src/eventListener.ts          — Block polling + event indexing
-  src/db/schema.sql             — PostgreSQL schema
-  src/api/                      — REST endpoints
-
-keeper/
-  src/jobs/                     — Cron jobs (expiry, void, health)
-
-tests/
-  noir/src/main.nr              — Noir unit tests
-  integration/src/e2e.test.ts   — Integration tests (placeholder)
-  e2e/specs/                    — Playwright specs
-
-docker-compose.yml              — Full local dev stack
-PHASES.md                       — Roadmap with checkboxes
-SETUP.md                        — Dev environment guide
-SRS.md                          — Requirements spec
-```
+### B4 — Indexer not running
+- All indexer fetches fail with `ERR_CONNECTION_REFUSED` to `localhost:3001`. The indexer requires PostgreSQL (`honkers-postgres` Docker container) and has never been started in this dev session. The on-chain fallback was added to compensate, but the indexer is needed for market detail, price history, and full-text search.
 
 ---
 
-## How to Run Locally
+## What's Left (by priority)
+
+### P0 — Fix account contract deployment (blocks all transactions)
+- Debug why `useWallet.ts` skips account contract deployment (see B1 above)
+- The Schnorr account contract must be deployed on-chain before any `.send()` call works
+- After fixing, re-test: faucet mint, market creation from frontend, trade placement
+- **Owner**: Anyone working on the frontend
+
+### P0 — Redeploy contracts after sandbox restart
+- Sandbox state is ephemeral — every restart requires `cd tests/integration && npx tsx src/deploy.ts`
+- This updates `frontend/.env` with fresh contract addresses
+- Then re-create the test market: `npx tsx src/create-market.ts`
+- **Owner**: Anyone starting a dev session
+
+### P1 — Start indexer service
+- `cd indexer && pnpm dev` (requires `docker start honkers-postgres` first)
+- Verify `/api/markets` returns data
+- The on-chain fallback works for basic market listing but doesn't support detail views, price history, or search
+- **Owner**: Backend developer
+
+### P1 — Wire remaining frontend flows
+- **Trade flow**: `useTrade` hook → AMM contract calls (`buy_outcome` / `sell_outcome`)
+- **Portfolio view**: Currently returns `[]` — needs contract view function calls for user positions
+- **Market detail page**: `useMarketDetail` only reads from indexer — needs on-chain fallback or indexer
+- **Owner**: Frontend developer
+
+### P2 — Integration hardening
+- Uncomment stubs in `tests/integration/`
+- Start keeper: `cd keeper && pnpm dev`
+- E2E tests with Playwright (`tests/e2e/`)
+- **Owner**: QA / full-stack
+
+### P3 — Polish
+- Docker Compose end to end (sandbox + postgres + indexer + keeper + frontend)
+- Error handling for edge cases (insufficient balance, market closed, etc.)
+- Import backup feature (Backup.tsx — currently placeholder)
+- Publish aztec-connect SDK to npm
+- **Owner**: DevOps / full-stack
+
+---
+
+## How to Resume Development
 
 ```bash
-# Start everything
-docker compose up -d
+# 1. Start sandbox (if not running)
+aztec start --sandbox
 
-# Or manually:
-# Terminal 1: Aztec Sandbox
-docker run --rm -p 8080:8080 aztecprotocol/aztec:4.1.3 start --sandbox
+# 2. Start Postgres (if not running)
+docker start honkers-postgres
 
-# Terminal 2: PostgreSQL
-docker run -d --name honkers-pg -e POSTGRES_USER=honkers -e POSTGRES_PASSWORD=honkers -e POSTGRES_DB=honkers -p 5432:5432 postgres:16
+# 3. Deploy contracts (REQUIRED after every sandbox restart)
+cd tests/integration && npx tsx src/deploy.ts && cd ../..
 
-# Terminal 3: Frontend
-cd frontend && pnpm install && pnpm dev
-# Opens at http://localhost:5173
+# 4. Create test market
+cd tests/integration && npx tsx src/create-market.ts && cd ../..
+
+# 5. Run DB migration (if using indexer)
+cd indexer && DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" npx tsx src/db/migrate.ts && cd ..
+
+# 6. Start frontend
+cd frontend && pnpm dev
+
+# 7. If you see "block hash not found" errors after sandbox restart:
+#    - The rollup detection should auto-clear stale data on page reload
+#    - If it doesn't, click the "Reset PXE" button in the wallet UI
+#    - Or run in browser console: indexedDB.deleteDatabase("pxe/aztec-pxe-honkers")
 ```
 
-See `SETUP.md` for full details including contract deployment and environment variables.
+### Environment
+- **Aztec**: v4.1.3 sandbox on port 8080
+- **Vite**: dev server on port 5173, proxies `/rpc` → `localhost:8080`
+- **PostgreSQL**: `honkers-postgres` Docker container on port 5432
+- **Indexer**: port 3001 (not currently running)
+- **Admin secret**: `0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281`
+- **Admin address**: `0x0a60414ee907527880b7a53d4dacdeb9ef768bb98d9d8d1e7200725c13763331`
 
 ---
 
-## Known Issues & Risks
+## Key Architecture Decisions
 
-| Issue | Impact | Mitigation |
-|-------|--------|------------|
-| PXE init is slow (~10-30s) on first load | Poor UX on first visit | Loading indicator implemented; WASM caching helps on reload |
-| localStorage secret storage is insecure | Testnet only acceptable | Phase 2: encrypted storage or KDF-derived keys |
-| Indexer event parsing incomplete | Markets list won't populate | Priority 1 item — complete storage slot derivation |
-| No deployment script yet | Manual contract deployment required | Priority 1 item — write `scripts/deploy.ts` |
-| Aztec v4.1.3 may have breaking changes from upstream | SDK churn | Version pinned; assigned owner for tracking upstream changes |
-
----
-
-## Phase Status
-
-**Currently in: Phase 1 — Testnet MVP**
-
-See `PHASES.md` for the full checklist with current completion status marked.
-
-Phase 2 (Mainnet Prep) and Phase 3 (Decentralization) are planned but not started.
+1. **Two-phase init** — `set_dependencies()` instead of constructor args for circular deps
+2. **In-browser PXE** — v4.1.3 moved PXE client-side. Private keys never leave the browser
+3. **Vite proxy** — `/rpc` to `localhost:8080` avoids CORS
+4. **MinimalWallet** — BaseWallet subclass bridges PXE to Wallet for AccountManager
+5. **`aztec codegen`** not `@aztec/builder` — builder was removed in v4.x
+6. **Rollup address tracking** — Detects sandbox restarts and auto-clears stale PXE IndexedDB
+7. **On-chain fallback** — Markets page reads MarketFactory directly when indexer is offline
 
 ---
 
-*This document should be updated as work progresses. The authoritative task list is in `PHASES.md`.*
+## File Map
+
+| Path | Purpose |
+|------|---------|
+| `contracts/*/src/main.nr` | Noir contract source (5 contracts) |
+| `tests/integration/src/deploy.ts` | Programmatic deploy script |
+| `tests/integration/src/create-market.ts` | Market creation script |
+| `tests/integration/src/artifacts/` | Generated TypeScript wrappers |
+| `frontend/src/hooks/useAztecWallet.ts` | PXE singleton + rollup detection + stale DB cleanup |
+| `frontend/src/hooks/useWallet.ts` | Schnorr account connect/disconnect + auto-reconnect |
+| `frontend/src/hooks/usePXE.ts` | Contract interaction (`simulateAndProve`) |
+| `frontend/src/hooks/useMarkets.ts` | Market fetching with on-chain fallback |
+| `frontend/src/hooks/useFaucet.ts` | Testnet USDC faucet (calls TestToken.faucet) |
+| `frontend/src/utils/MinimalWallet.ts` | BaseWallet bridge for AccountManager |
+| `frontend/src/components/wallet/WalletConnect.tsx` | Wallet UI + Reset PXE |
+| `frontend/src/components/AztecProvider.tsx` | PXE context provider |
+| `frontend/src/pages/Backup.tsx` | Export/import encrypted note backup |
+| `frontend/src/config/contractArtifacts.ts` | Contract address → artifact registry |
+| `frontend/src/config/aztec.ts` | Config from env vars |
+| `frontend/vite.config.ts` | WASM/polyfill/proxy config |
+| `frontend/.env` | Contract addresses + RPC/indexer URLs |
+| `indexer/src/db/schema.sql` | Database DDL |
+| `keeper/src/` | Auto-void bot + health monitoring |
+| `aztec-connect/` | Reusable wallet SDK |
+| `SETUP.md` | Setup guide (updated for v4.1.3) |
+| `AZTEC_WALLET_CONNECT_GUIDE.md` | In-browser PXE guide |

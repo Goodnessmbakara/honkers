@@ -1,19 +1,19 @@
 {
   "amm-AMM.json": {
     "contractName": "AMM",
-    "hash": "b157eff2b85e87bc38c7a7ac9019de5c975d5c1ee9b3cf7f5bc53f549d217608"
+    "hash": "5c4c18ec8a677f132bb94af9110a399e22c4c37b225335977b94cd2a9c16a8b7"
   },
   "market_factory-MarketFactory.json": {
     "contractName": "MarketFactory",
-    "hash": "f5d2344ae2f75705c4b5702dcd1cf4153d0d5d506dbdf442f09f6579297fbef0"
+    "hash": "2f259345910ec2f6d7c0a22a0be3b5422f1fa04cbbc7abe5b35f84eabd334cf5"
   },
   "oracle-Oracle.json": {
     "contractName": "Oracle",
-    "hash": "98ab50fa0b6411dd12e297068585f549d559d105c52ce556f5542ab35d7683fa"
+    "hash": "bc6d54fae70bb72fb751daa3215718f05fadfe2a25159091c846d15f60cb1e65"
   },
   "private_vault-PrivateVault.json": {
     "contractName": "PrivateVault",
-    "hash": "55a43a9741e964aa90882542227e03fb9e0ce1c73114a5d625a21d086ccf2ba6"
+    "hash": "a589775dd4d838b1818e83e7a1d83e6b14822a0fd0ee9de8bdbb036e899b05c6"
   },
   "test_token-TestToken.json": {
     "contractName": "TestToken",

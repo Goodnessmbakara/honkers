@@ -1,0 +1,243 @@
+#!/usr/bin/env tsx
+// ---------------------------------------------------------------------------
+// deploy.ts — Deploy all Honkers contracts to the Aztec sandbox
+//
+// Two-phase deployment:
+//   Phase 1: Deploy all 5 contracts (admin-only constructors)
+//   Phase 2: Wire dependencies via set_dependencies() calls
+//
+// Usage:
+//   cd /workspaces/honkers && npx tsx scripts/deploy.ts
+// ---------------------------------------------------------------------------
+
+import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { Fr } from "@aztec/aztec.js/fields";
+import { AccountManager } from "@aztec/aztec.js/wallet";
+import { SchnorrAccountContract } from "@aztec/accounts/schnorr";
+import { deriveSigningKey } from "@aztec/stdlib/keys";
+import { createPXE } from "@aztec/pxe/server";
+import { getPXEConfig } from "@aztec/pxe/config";
+
+import { AMMContract } from "./artifacts/AMM.js";
+import { OracleContract } from "./artifacts/Oracle.js";
+import { PrivateVaultContract } from "./artifacts/PrivateVault.js";
+import { MarketFactoryContract } from "./artifacts/MarketFactory.js";
+import { TestTokenContract } from "./artifacts/TestToken.js";
+
+const NODE_URL = process.env.AZTEC_RPC_URL || "http://localhost:8080";
+// Use a deterministic admin secret so re-runs produce the same admin address
+const ADMIN_SECRET = Fr.fromHexString(
+  process.env.ADMIN_SECRET ||
+    "0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281"
+);
+
+async function main() {
+  console.log("=== Honkers Contract Deployer ===\n");
+
+  // ── Step 1: Connect to Aztec node ────────────────────────────────────
+  console.log(`Connecting to Aztec node @ ${NODE_URL}...`);
+  const aztecNode = createAztecNodeClient(NODE_URL);
+  const nodeInfo = await aztecNode.getNodeInfo();
+  console.log(`  Node version: ${nodeInfo.nodeVersion}`);
+
+  // ── Step 2: Create local PXE ─────────────────────────────────────────
+  console.log("Creating local PXE...");
+  const l1Contracts = await aztecNode.getL1ContractAddresses();
+  const config = getPXEConfig();
+  config.l1Contracts = l1Contracts;
+  config.proverEnabled = false;
+  const pxe = await createPXE(aztecNode, config);
+  console.log("  PXE ready.");
+
+  // ── Step 3: Create admin wallet ──────────────────────────────────────
+  console.log("Setting up admin wallet...");
+  const signingKey = deriveSigningKey(ADMIN_SECRET);
+  const accountContract = new SchnorrAccountContract(signingKey);
+  const salt = Fr.ZERO;
+
+  // BaseWallet bridge for AccountManager (same pattern as MinimalWallet)
+  const { BaseWallet } = await import("@aztec/wallet-sdk/base-wallet");
+  const { SignerlessAccount } = await import("@aztec/aztec.js/account");
+  const { AztecAddress } = await import("@aztec/aztec.js/addresses");
+
+  class DeployerWallet extends BaseWallet {
+    private accounts = new Map<string, any>();
+    constructor(pxeInst: any, node: any) {
+      super(pxeInst, node);
+    }
+    addAccount(account: any) {
+      this.accounts.set(account.getAddress().toString(), account);
+    }
+    protected async getAccountFromAddress(address: any) {
+      if (address.equals(AztecAddress.ZERO)) return new SignerlessAccount();
+      const acct = this.accounts.get(address.toString());
+      if (!acct) throw new Error(`Account not found: ${address}`);
+      return acct;
+    }
+  }
+
+  const wallet = new DeployerWallet(pxe, aztecNode);
+  const accountManager = await AccountManager.create(
+    wallet,
+    ADMIN_SECRET,
+    accountContract,
+    salt
+  );
+
+  const account = await accountManager.getAccount();
+  const instance = accountManager.getInstance();
+  const artifact = await accountManager
+    .getAccountContract()
+    .getContractArtifact();
+
+  await wallet.registerContract(
+    instance,
+    artifact,
+    accountManager.getSecretKey()
+  );
+  wallet.addAccount(account);
+
+  const adminAddress = account.getAddress();
+  console.log(`  Admin address: ${adminAddress}`);
+
+  // Deploy the admin account contract if needed
+  if (await accountManager.hasInitializer()) {
+    const existing = await pxe.getContractInstance(adminAddress);
+    if (!existing) {
+      console.log("  Deploying admin account contract...");
+      const deployMethod = await accountManager.getDeployMethod();
+      await deployMethod.send().wait();
+      console.log("  Admin account deployed.");
+    } else {
+      console.log("  Admin account already deployed.");
+    }
+  }
+
+  // Fee recipient = sandbox account 1 (or admin itself for simplicity)
+  const feeRecipient = adminAddress;
+
+  // ── Phase 1: Deploy contracts ────────────────────────────────────────
+  console.log("\n--- Phase 1: Deploying contracts ---\n");
+
+  console.log("Deploying TestToken...");
+  const tokenResult = await TestTokenContract.deploy(
+    wallet,
+    adminAddress,
+    1, // name field (numeric encoding)
+    2 // symbol field (numeric encoding)
+  ).send({ from: adminAddress });
+  const tokenAddress = tokenResult.contract.address;
+  console.log(`  TestToken deployed: ${tokenAddress}`);
+
+  console.log("Deploying AMM...");
+  const ammResult = await AMMContract.deploy(wallet, adminAddress).send({ from: adminAddress });
+  const ammAddress = ammResult.contract.address;
+  console.log(`  AMM deployed: ${ammAddress}`);
+
+  console.log("Deploying Oracle...");
+  const oracleResult = await OracleContract.deploy(
+    wallet,
+    adminAddress
+  ).send({ from: adminAddress });
+  const oracleAddress = oracleResult.contract.address;
+  console.log(`  Oracle deployed: ${oracleAddress}`);
+
+  console.log("Deploying PrivateVault...");
+  const vaultResult = await PrivateVaultContract.deploy(
+    wallet,
+    adminAddress,
+    feeRecipient
+  ).send({ from: adminAddress });
+  const vaultAddress = vaultResult.contract.address;
+  console.log(`  PrivateVault deployed: ${vaultAddress}`);
+
+  console.log("Deploying MarketFactory...");
+  const factoryResult = await MarketFactoryContract.deploy(
+    wallet,
+    adminAddress
+  ).send({ from: adminAddress });
+  const factoryAddress = factoryResult.contract.address;
+  console.log(`  MarketFactory deployed: ${factoryAddress}`);
+
+  // ── Phase 2: Wire dependencies ───────────────────────────────────────
+  console.log("\n--- Phase 2: Wiring dependencies ---\n");
+
+  const amm = ammResult.contract;
+  const oracle = oracleResult.contract;
+  const vault = vaultResult.contract;
+  const factory = factoryResult.contract;
+
+  console.log("AMM.set_dependencies(vault, oracle)...");
+  await amm.methods.set_dependencies(vaultAddress, oracleAddress).send({ from: adminAddress });
+  console.log("  Done.");
+
+  console.log("Oracle.set_dependencies(amm)...");
+  await oracle.methods.set_dependencies(ammAddress).send({ from: adminAddress });
+  console.log("  Done.");
+
+  console.log("PrivateVault.set_dependencies(token, amm, oracle)...");
+  await vault.methods
+    .set_dependencies(tokenAddress, ammAddress, oracleAddress)
+    .send({ from: adminAddress });
+  console.log("  Done.");
+
+  console.log("MarketFactory.set_dependencies(amm, oracle, token)...");
+  await factory.methods
+    .set_dependencies(ammAddress, oracleAddress, tokenAddress)
+    .send({ from: adminAddress });
+  console.log("  Done.");
+
+  // ── Output addresses ─────────────────────────────────────────────────
+  console.log("\n=== Deployment Complete ===\n");
+
+  const addresses = {
+    ADMIN_ADDRESS: adminAddress.toString(),
+    TEST_TOKEN_ADDRESS: tokenAddress.toString(),
+    AMM_ADDRESS: ammAddress.toString(),
+    ORACLE_ADDRESS: oracleAddress.toString(),
+    PRIVATE_VAULT_ADDRESS: vaultAddress.toString(),
+    MARKET_FACTORY_ADDRESS: factoryAddress.toString(),
+  };
+
+  for (const [key, value] of Object.entries(addresses)) {
+    console.log(`${key}=${value}`);
+  }
+
+  // Write .env files
+  const { writeFileSync } = await import("fs");
+  const { join } = await import("path");
+  const root = join(import.meta.dirname, "..", "..", "..");
+
+  const frontendEnv = [
+    `VITE_AZTEC_RPC_URL=/rpc`,
+    `VITE_INDEXER_API_URL=http://localhost:3001`,
+    `VITE_ADMIN_ADDRESS=${addresses.ADMIN_ADDRESS}`,
+    `VITE_TEST_TOKEN_ADDRESS=${addresses.TEST_TOKEN_ADDRESS}`,
+    `VITE_AMM_ADDRESS=${addresses.AMM_ADDRESS}`,
+    `VITE_ORACLE_ADDRESS=${addresses.ORACLE_ADDRESS}`,
+    `VITE_PRIVATE_VAULT_ADDRESS=${addresses.PRIVATE_VAULT_ADDRESS}`,
+    `VITE_MARKET_FACTORY_ADDRESS=${addresses.MARKET_FACTORY_ADDRESS}`,
+  ].join("\n");
+
+  const rootEnv = [
+    `AZTEC_RPC_URL=http://localhost:8080`,
+    `DATABASE_URL=postgresql://honkers:honkers@localhost:5432/honkers`,
+    `ADMIN_ADDRESS=${addresses.ADMIN_ADDRESS}`,
+    `TEST_TOKEN_ADDRESS=${addresses.TEST_TOKEN_ADDRESS}`,
+    `AMM_ADDRESS=${addresses.AMM_ADDRESS}`,
+    `ORACLE_ADDRESS=${addresses.ORACLE_ADDRESS}`,
+    `PRIVATE_VAULT_ADDRESS=${addresses.PRIVATE_VAULT_ADDRESS}`,
+    `MARKET_FACTORY_ADDRESS=${addresses.MARKET_FACTORY_ADDRESS}`,
+  ].join("\n");
+
+  writeFileSync(join(root, "frontend", ".env"), frontendEnv + "\n");
+  writeFileSync(join(root, ".env"), rootEnv + "\n");
+
+  console.log("\nWrote frontend/.env and .env");
+  console.log("\nDone! You can now start the frontend with: cd frontend && pnpm dev");
+}
+
+main().catch((err) => {
+  console.error("Deploy failed:", err);
+  process.exit(1);
+});
