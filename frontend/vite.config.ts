@@ -108,6 +108,7 @@ export default defineConfig({
       '@aztec/protocol-contracts',
       '@aztec/wallets',
       '@aztec/wallet-sdk',
+      '@aztec/noir-contracts.js',
     ],
     // Explicitly include polyfills so they are pre-bundled and available to the 
     // non-optimized @aztec packages above.
@@ -168,7 +169,7 @@ export default defineConfig({
     proxy: {
       // Proxy Aztec sandbox RPC to avoid CORS issues
       '/rpc': {
-        target: 'http://localhost:8080',
+        target: process.env.AZTEC_SANDBOX_URL || 'http://localhost:8080',
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/rpc/, ''),
       },

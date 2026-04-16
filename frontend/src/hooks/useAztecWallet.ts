@@ -68,6 +68,18 @@ async function nukeStaleDB() {
   }
 }
 
+/**
+ * Nuke all PXE state and force a fresh start.
+ * Exported so WalletContext can call it on stale-note errors.
+ */
+export async function resetPXEState() {
+  pxePromise = null;
+  await nukeStaleDB();
+  localStorage.removeItem("honkers:wallet-address");
+  localStorage.removeItem("honkers:wallet-secret");
+  localStorage.removeItem(ROLLUP_KEY);
+}
+
 export async function getOrCreatePXE(nodeUrl: string): Promise<SharedPXEInstance> {
   if (pxePromise) return pxePromise;
 

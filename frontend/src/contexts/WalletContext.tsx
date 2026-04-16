@@ -8,14 +8,27 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import type { WalletState } from "../types";
-import { useAztecWallet } from "../hooks/useAztecWallet";
+import { useAztecWallet, resetPXEState } from "../hooks/useAztecWallet";
 import { Fr } from "@aztec/aztec.js/fields";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { AccountManager } from "@aztec/aztec.js/wallet";
 import { SchnorrAccountContract } from "@aztec/accounts/schnorr";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
+import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 
 const STORAGE_KEY = "honkers:wallet-address";
 const SECRET_KEY = "honkers:wallet-secret";
+
+/** Detect stale PXE errors that require IndexedDB reset */
+function isStaleNoteError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return (
+    msg.includes("Failed to get a note") ||
+    msg.includes("Block hash not found") ||
+    msg.includes("self.is_some()")
+  );
+}
 
 interface WalletContextValue extends WalletState {
   connect: () => Promise<void>;
@@ -85,8 +98,27 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       if (await accountManager.hasInitializer()) {
         try {
           console.log("[WalletProvider] Deploying account contract...");
+
+          // Set up Sponsored FPC — pays fees unconditionally on sandbox/devnet.
+          // The SponsoredFPC is a canonical contract deployed at a deterministic
+          // address derived from its artifact + salt=0.
+          const { SponsoredFPCContractArtifact } = await import("@aztec/noir-contracts.js/SponsoredFPC");
+          const sponsoredFPCInstance = await getContractInstanceFromInstantiationParams(
+            SponsoredFPCContractArtifact,
+            { salt: Fr.ZERO },
+          );
+          await minimalWallet.registerContract(sponsoredFPCInstance, SponsoredFPCContractArtifact);
+          const paymentMethod = new SponsoredFeePaymentMethod(sponsoredFPCInstance.address);
+          console.log(`[WalletProvider] Sponsored FPC registered @ ${sponsoredFPCInstance.address}`);
+
           const deployMethod = await accountManager.getDeployMethod();
-          await deployMethod.send({ from: account.getAddress() });
+          // Use AztecAddress.ZERO (self-deployment mode) so the constructor runs
+          // BEFORE the entrypoint, and pass the Sponsored FPC as fee payer so the
+          // new account doesn't need pre-existing Fee Juice balance.
+          await deployMethod.send({
+            from: AztecAddress.ZERO,
+            fee: { paymentMethod },
+          });
           console.log("[WalletProvider] Account contract deployed.");
         } catch (deployErr: unknown) {
           const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
@@ -103,9 +135,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       setState({ connected: true, address, syncing: false });
       console.log(`[WalletProvider] Connected: ${address}`);
     } catch (err) {
+      // Auto-recover from stale IndexedDB errors: clear data and reload ONCE.
+      // Use a sessionStorage flag to prevent infinite reload loops.
+      if (isStaleNoteError(err) && !sessionStorage.getItem("honkers:recovery-attempted")) {
+        console.warn("[WalletProvider] Stale PXE data detected. Clearing IndexedDB and reloading...");
+        sessionStorage.setItem("honkers:recovery-attempted", "1");
+        await resetPXEState();
+        setState({ connected: false, address: null, syncing: false });
+        window.location.reload();
+        return;
+      }
+      // Clear recovery flag on non-stale errors or after retry
+      sessionStorage.removeItem("honkers:recovery-attempted");
       console.error("[WalletProvider] connect failed:", err);
       setState({ connected: false, address: null, syncing: false });
-      throw err;
     }
   }, [pxeInstance]);
 
