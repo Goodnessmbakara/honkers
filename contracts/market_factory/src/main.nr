@@ -71,9 +71,11 @@ pub contract MarketFactory {
     ) -> Field {
         let creator = self.msg_sender();
 
-        let key = creator.to_field();
-        let is_whitelisted = self.storage.whitelist.at(key).read();
-        assert(is_whitelisted == 1, "Creator not whitelisted");
+        // Whitelist requirement disabled: any connected wallet can create markets.
+        // To re-enable, uncomment the three lines below and redeploy.
+        // let key = creator.to_field();
+        // let is_whitelisted = self.storage.whitelist.at(key).read();
+        // assert(is_whitelisted == 1, "Creator not whitelisted");
 
         assert(bond_amount as u64 > 0, "Bond must be positive");
         assert(end_date as u64 > self.context.timestamp(), "End date must be in the future");

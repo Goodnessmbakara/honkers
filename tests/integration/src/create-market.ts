@@ -135,20 +135,9 @@ async function main() {
   const marketFactory = MarketFactoryContract.at(marketFactoryAddr, wallet);
   const oracle = OracleContract.at(oracleAddr, wallet);
 
-  // ── Step 6: Whitelist admin as market creator
-  console.log("\nWhitelisting admin as market creator...");
-  try {
-    await marketFactory.methods.add_to_whitelist(adminAddress).send({ from: adminAddress });
-    console.log("  Admin whitelisted ✓");
-  } catch (err: any) {
-    if (err.message?.includes("already")) {
-      console.log("  Admin already whitelisted ✓");
-    } else {
-      throw err;
-    }
-  }
+  // ── Step 6: Create market
+  // (Whitelist requirement removed from MarketFactory — any caller can create.)
 
-  // ── Step 7: Create market
   const questionHash = hashString(QUESTION);
   const criteriaHash = hashString(CRITERIA);
   const sourceHash = hashString(SOURCE);
@@ -174,7 +163,7 @@ async function main() {
 
   console.log(`\n  Market created! tx: ${(result as any).txHash ?? 'sent'}`);
 
-  // ── Step 8: Read back market ID (best effort)
+  // ── Step 7: Read back market ID (best effort)
   let marketId = 1; // default for first market
   try {
     const nextId = await marketFactory.methods.get_next_market_id().simulate();
@@ -184,7 +173,7 @@ async function main() {
   }
   console.log(`  Market ID: ${marketId}`);
 
-  // ── Step 9: Register market on Oracle
+  // ── Step 8: Register market on Oracle
   console.log(`\nRegistering market ${marketId} on Oracle...`);
   await oracle.methods
     .register_market(new Fr(marketId), new Fr(endDate))
