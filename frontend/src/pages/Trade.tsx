@@ -18,16 +18,25 @@ import { WalletConnect } from "../components/wallet/WalletConnect";
 export function Trade() {
   const { id } = useParams<{ id: string }>();
   const marketId = id ? Number(id) : null;
-  const { market, loading } = useMarketDetail(marketId);
+  const { market, loading, error: marketError } = useMarketDetail(marketId);
   const { connected, address } = useWallet();
   const { balance } = usePortfolio(address);
   const { step, elapsed, txHash, error, execute, cancel, reset } = useTrade();
 
-  if (loading || !market) {
+  if (loading) {
     return (
       <div className="page">
         <div className="skeleton" style={{ width: "60%", height: 28, marginBottom: "var(--space-4)" }} />
         <div className="skeleton" style={{ width: "100%", height: 300 }} />
+      </div>
+    );
+  }
+
+  if (!market) {
+    return (
+      <div className="page">
+        <h2>Market not found</h2>
+        <p style={{ color: "var(--text-muted)" }}>{marketError ?? "Could not load this market."}</p>
       </div>
     );
   }

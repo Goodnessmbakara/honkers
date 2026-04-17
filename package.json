@@ -1,0 +1,7 @@
+{
+  "name": "honkers",
+  "private": true,
+  "scripts": {
+    "verify:stack": "node scripts/verify-dev-stack.mjs"
+  }
+}

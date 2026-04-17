@@ -101,7 +101,19 @@ export interface ToastMessage {
 
 export type TradeSide = "yes" | "no";
 
-export type ProofStep = "witness" | "proving" | "submitting" | "confirmed" | "failed";
+/** Proof UX: generic steps plus two-tx trade (deposit → buy_shares). */
+export type ProofStep =
+  | "witness"
+  | "proving"
+  | "submitting"
+  | "confirmed"
+  | "failed"
+  | "deposit_witness"
+  | "deposit_proving"
+  | "deposit_submitting"
+  | "buy_witness"
+  | "buy_proving"
+  | "buy_submitting";
 
 export interface TradeParams {
   marketId: number;

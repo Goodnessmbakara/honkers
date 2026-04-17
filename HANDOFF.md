@@ -37,7 +37,8 @@ Last updated: 2026-04-17
 - **Reset PXE button** — enumerates all IndexedDB databases matching `aztec` or `pxe` and deletes them all
 - **Export backup** — dumps all Aztec/PXE IndexedDB databases + `honkers:*` localStorage keys to a JSON download
 - **On-chain market fallback** — `useMarkets` tries the indexer API first; on failure falls back to reading `MarketFactory.get_next_market_id()` + `get_market_info(id)` directly via simulate calls. Null-guarded against stale contract addresses. Indexer list responses use `{ markets }`; the hook also accepts `data` for compatibility.
-- **Trade flow** — `useTrade` runs `deposit_collateral` then `buy_shares` with five arguments. AMM `get_price_yes` / `get_price_no` (simulate) supplies `price_per_share`; `maxSlippage` is basis points applied to minimum `shares_out`. Two transactions (two proof cycles).
+- **Trade flow** — `useTrade` runs `deposit_collateral` then `buy_shares` with five arguments. AMM `get_price_yes` / `get_price_no` (simulate) supplies `price_per_share`; `maxSlippage` is basis points applied to minimum `shares_out`. Two transactions (two proof cycles). **Proof UI** shows **(1/2) Deposit** vs **(2/2) Buy shares** in `ProofProgress`.
+- **Market detail & charts (indexer + chain)** — `useMarketDetail` / `useMarketPrices` hit the indexer first; on **404** or **fetch error** they fall back to **AMM** + **MarketFactory** simulates (`get_market_info`, `get_price_yes` / `get_price_no`, `get_reserves`) when the wallet is connected. API bodies are **normalized** (indexer camelCase, optional `{ data }` wrapper). `Trade` distinguishes loading vs missing market.
 - **Portfolio** — `usePXE.getPrivateNotes` uses `pxe.debug.getNotes` (PrivateVault slots 8=collateral, 9=shares, 10=winnings). `claim_winnings` passes `fee_recipient` from `VITE_FEE_RECIPIENT_ADDRESS` or falls back to `get_admin()`.
 
 ### Indexer (public state)
@@ -100,32 +101,58 @@ Last updated: 2026-04-17
 
 ## What's Left (by priority)
 
-### P0 — Redeploy contracts (sandbox restart or MarketFactory change)
-- Sandbox state is ephemeral — every restart: `cd tests/integration && npx tsx src/deploy.ts` (refreshes `frontend/.env`).
-- **After pulling MarketFactory changes** — same full deploy (or `redeploy-factory.ts` if you only replace factory); otherwise `/create` may still run old bytecode (e.g. whitelist revert).
-- Seed market: `npx tsx src/create-market.ts` (no whitelist step).
-- **Owner**: Anyone starting a dev session
+### P0 / P1 — Operational verification (automated + manual)
 
-### P0 — End-to-end test of B1 fix + auth refactor
-- Deploy contracts, connect wallet, verify account contract deploys on-chain
-- Test faucet, trade, portfolio, markets pages
-- Verify protected routes show "Wallet required" when disconnected
-- **Owner**: Anyone with a running sandbox
+**Problem (first principles):** Sandbox state resets, deploy writes new addresses, and three moving parts (node, Postgres+indexer, frontend env) must line up. Browser-only flows cannot be scripted without a dedicated E2E harness.
 
-### P1 — Indexer + DB smoke test
-- With sandbox + Postgres: `cd indexer && pnpm dev`, then `curl -s http://localhost:3001/api/markets | head`
-- Confirm rows are not `"pending"` placeholders after a poll cycle
+**Automated stack check (run after sandbox + indexer are up):**
+
+```bash
+# From repo root
+pnpm verify:stack
+# → node scripts/verify-dev-stack.mjs
+#    • JSON-RPC node_getNodeInfo @ AZTEC_RPC_URL (default http://localhost:8080)
+#    • GET /health + GET /api/markets @ INDEXER_URL (default http://localhost:3001)
+#    • Warns if frontend/.env lacks contract addresses (deploy not run)
+```
+
+**P0 — Redeploy contracts (sandbox restart or MarketFactory change)**
+
+1. Start sandbox (`aztec start --sandbox` or your Docker compose Aztec service).
+2. `cd tests/integration && pnpm exec tsx src/deploy.ts` — refreshes root + `frontend/.env` addresses.
+3. After **MarketFactory** source changes, full deploy (or `src/redeploy-factory.ts` if you only replace factory bytecode); otherwise UI may still hit old logic (e.g. whitelist).
+4. Seed market: `pnpm exec tsx src/create-market.ts` (no whitelist step).
+5. Re-run `pnpm verify:stack` — should report `frontend/.env` OK.
+
+**P0 — Manual E2E (B1 account deploy + auth refactor — not covered by verify:stack)**
+
+| Step | Pass criteria |
+|------|----------------|
+| Connect | Account contract deploys (Sponsored FPC); address shows in UI |
+| Faucet | Mint succeeds for connected wallet |
+| Markets / Trade / Portfolio | Pages load; trade uses two-step proof UX |
+| ProtectedRoute | Disconnect → visit `/portfolio` (or other gated route) → “Wallet required” + connect affordance |
+| Reload | Auto-reconnect when PXE + stored credentials present |
+
+**P1 — Indexer + DB (same session)**
+
+1. `docker start honkers-postgres` (or equivalent) — DB up.
+2. `cd indexer && DATABASE_URL=… pnpm db:migrate` if schema not applied.
+3. Set `MARKET_FACTORY_ADDRESS`, `AMM_ADDRESS`, `ORACLE_ADDRESS`, `TEST_TOKEN_ADDRESS` in indexer env (match `frontend/.env` after deploy).
+4. `cd indexer && pnpm dev` — event listener + API.
+5. `pnpm verify:stack` — confirms `/api/markets` returns JSON; if markets exist but `questionText` still looks like a placeholder, run a poll cycle or `POST /api/markets/:id/metadata`.
+
+**Owner:** Anyone starting a dev session; run `pnpm verify:stack` before reporting “stack is up.”
 
 ### P1 — Remaining frontend / product gaps
-- **Market detail page**: `useMarketDetail` still depends primarily on the indexer for prices — add on-chain AMM simulate fallback if the indexer is down
-- **Trade UX**: Two proof cycles per trade; optional batching or clearer step labels later
-- **Human-readable copy**: contract stores hashes only; ensure indexer (or other pipeline) stores question text for cards/detail
+- **Human-readable copy**: on-chain fallback still only resolves question text via `KNOWN_QUESTIONS` in `useMarkets.ts` (hash → string). For arbitrary creator markets, use indexer **`POST /api/markets/:id/metadata`** (or DB `market_metadata`) so list/detail show real questions/criteria/source when the indexer is up.
+- **Optional**: batch deposit+buy into one user-facing stepper with explicit “tx 1 / tx 2” receipts (still two proofs on-chain).
 - **Owner**: Frontend developer
 
 ### P2 — Integration hardening
-- Uncomment stubs in `tests/integration/`
-- Start keeper: `cd keeper && pnpm dev`
-- E2E tests with Playwright (`tests/e2e/`)
+- **Keeper**: `cd keeper && pnpm dev` — wire env to sandbox + DB for auto-void / health (see `keeper/README` if present).
+- **Playwright** (`tests/e2e/`): specs expect **`data-testid`** hooks (`connect-wallet`, `market-card`, …) that are **not yet wired** in React — add testids or trim specs to match current routes (`/trade/:id` vs inline trade).
+- **Contract integration tests**: `tests/integration/src/e2e.test.ts` — run against live sandbox when available (`pnpm test` in `tests/integration`).
 - **Owner**: QA / full-stack
 
 ### P3 — Polish
@@ -147,18 +174,22 @@ aztec start --sandbox
 docker start honkers-postgres
 
 # 3. Deploy contracts (REQUIRED after every sandbox restart)
-cd tests/integration && npx tsx src/deploy.ts && cd ../..
+cd tests/integration && pnpm exec tsx src/deploy.ts && cd ../..
 
 # 4. Create test market
-cd tests/integration && npx tsx src/create-market.ts && cd ../..
+cd tests/integration && pnpm exec tsx src/create-market.ts && cd ../..
 
 # 5. Run DB migration (if using indexer)
-cd indexer && DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" npx tsx src/db/migrate.ts && cd ..
+cd indexer && DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" pnpm exec tsx src/db/migrate.ts && cd ..
+
+# 5b. Start indexer (separate terminal), then from repo root:
+#    pnpm verify:stack
 
 # 6. Start frontend
 cd frontend && pnpm dev
 
 # 6b. Verification (optional)
+#    pnpm verify:stack
 #    cd indexer && pnpm exec tsc --noEmit
 #    cd frontend && pnpm exec tsc --noEmit && pnpm run build
 
@@ -209,7 +240,8 @@ cd frontend && pnpm dev
 | `frontend/src/hooks/usePXE.ts` | `simulateAndProve`, `simulateView`, `getPrivateNotes` (PXE `debug.getNotes`) |
 | `frontend/src/hooks/useTrade.ts` | Deposit + `buy_shares` (AMM-priced) |
 | `frontend/src/hooks/usePortfolio.ts` | Vault note slots 8/9/10, `claim_winnings` with fee recipient |
-| `frontend/src/hooks/useMarkets.ts` | Indexer + on-chain fallback; accepts `data` or `markets` JSON |
+| `frontend/src/hooks/useMarkets.ts` | Indexer + on-chain list/detail/prices; API normalize; `KNOWN_QUESTIONS` for hash→text |
+| `frontend/src/utils/aztecSimulate.ts` | `unwrapSimulate`, `fieldLikeToBigInt`, AMM price scale helpers |
 | `frontend/src/hooks/useFaucet.ts` | Testnet USDC faucet (calls TestToken.faucet) |
 | `frontend/src/utils/MinimalWallet.ts` | BaseWallet bridge for AccountManager |
 | `frontend/src/admin/AdminHome.tsx` | Admin stats + market table (whitelist UI removed) |
@@ -228,3 +260,5 @@ cd frontend && pnpm dev
 | `aztec-connect/` | Reusable wallet SDK |
 | `SETUP.md` | Setup guide (updated for v4.1.3) |
 | `AZTEC_WALLET_CONNECT_GUIDE.md` | In-browser PXE guide |
+| `scripts/verify-dev-stack.mjs` | `pnpm verify:stack` — Aztec + indexer + `.env` smoke check |
+| `scripts/README.md` | Short script index |

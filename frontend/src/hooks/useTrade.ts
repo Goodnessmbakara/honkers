@@ -57,14 +57,25 @@ export function useTrade() {
 
         const sideField = params.side === "yes" ? 1 : 0;
 
-        const onStep = (s: string) => setStep(s as ProofStep);
+        const mapDeposit = (s: string): ProofStep => {
+          if (s === "witness") return "deposit_witness";
+          if (s === "proving") return "deposit_proving";
+          if (s === "submitting") return "deposit_submitting";
+          return s as ProofStep;
+        };
+        const mapBuy = (s: string): ProofStep => {
+          if (s === "witness") return "buy_witness";
+          if (s === "proving") return "buy_proving";
+          if (s === "submitting") return "buy_submitting";
+          return s as ProofStep;
+        };
 
         const hashDeposit = await simulateAndProve(
           aztecConfig.contracts.privateVault,
           "deposit_collateral",
           [new Fr(collateralAmount)],
           walletAddress,
-          onStep,
+          (s) => setStep(mapDeposit(s)),
         );
 
         const hashBuy = await simulateAndProve(
@@ -78,7 +89,7 @@ export function useTrade() {
             new Fr(pricePerShare),
           ],
           walletAddress,
-          onStep,
+          (s) => setStep(mapBuy(s)),
         );
 
         setTxHash(`${hashDeposit},${hashBuy}`);

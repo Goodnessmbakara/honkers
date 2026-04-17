@@ -12,6 +12,12 @@ const stepLabels: Record<ProofStep, string> = {
   submitting: "Submitting transaction…",
   confirmed: "Transaction confirmed",
   failed: "Proof generation failed",
+  deposit_witness: "(1/2) Deposit — generating witness…",
+  deposit_proving: "(1/2) Deposit — computing proof…",
+  deposit_submitting: "(1/2) Deposit — submitting…",
+  buy_witness: "(2/2) Buy shares — generating witness…",
+  buy_proving: "(2/2) Buy shares — computing proof…",
+  buy_submitting: "(2/2) Buy shares — submitting…",
 };
 
 interface Props {
@@ -21,7 +27,16 @@ interface Props {
 }
 
 export function ProofProgress({ step, elapsed, onCancel }: Props) {
-  const isActive = step === "witness" || step === "proving" || step === "submitting";
+  const isActive =
+    step === "witness" ||
+    step === "proving" ||
+    step === "submitting" ||
+    step === "deposit_witness" ||
+    step === "deposit_proving" ||
+    step === "deposit_submitting" ||
+    step === "buy_witness" ||
+    step === "buy_proving" ||
+    step === "buy_submitting";
   const seconds = Math.floor(elapsed / 1000);
 
   return (
