@@ -122,7 +122,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           console.log("[WalletProvider] Account contract deployed.");
         } catch (deployErr: unknown) {
           const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
-          if (msg.includes("already deployed") || msg.includes("DUPLICATE_NULLIFIER") || msg.includes("exists")) {
+          if (msg.includes("already deployed") || msg.includes("DUPLICATE_NULLIFIER") || msg.includes("Existing nullifier") || msg.includes("exists")) {
             console.log("[WalletProvider] Account contract already deployed, skipping.");
           } else {
             throw deployErr;
@@ -161,7 +161,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const savedSecret = localStorage.getItem(SECRET_KEY);
     const savedAddress = localStorage.getItem(STORAGE_KEY);
-    if (savedSecret && savedAddress && pxeInstance && !state.syncing && !connectingRef.current) {
+    if (savedSecret && savedAddress && pxeInstance && !connectingRef.current) {
       connectingRef.current = true;
       setState((s) => (s.address === savedAddress ? s : { connected: true, address: savedAddress, syncing: true }));
       connect()
@@ -173,7 +173,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         })
         .finally(() => { connectingRef.current = false; });
     } else if (savedAddress && !pxeInstance) {
-      setState((s) => (s.address === savedAddress ? s : { connected: true, address: savedAddress, syncing: false }));
+      // PXE not ready yet — show as syncing, not connected.
+      // Setting connected: true here causes components to call wallet methods
+      // before the account is registered in MinimalWallet.
+      setState((s) => (s.address === savedAddress && s.syncing ? s : { connected: false, address: savedAddress, syncing: true }));
     }
   }, [pxeInstance]); // eslint-disable-line react-hooks/exhaustive-deps
 

@@ -1,25 +1,16 @@
 # Honkers — Handoff Document
 
 Status snapshot for co-contributors picking up the project.
-Last updated: 2026-04-16
+Last updated: 2026-04-17
 
 ---
 
-## Current Working Status (2026-04-16)
+## Current working status
 
-- **Create market — works.** The frontend flow submits from a connected wallet and lands on-chain. Blocker ("Creator not whitelisted") was the MarketFactory whitelist assert. Now disabled (see "Whitelist workaround" below) — contract redeploy required to activate the change on a running sandbox.
-- **Faucet — works.** TestToken mint from the Faucet page succeeds for any connected wallet.
-- **Wallet connect — works.** Account contract deploys via Sponsored FPC fee payment on first connect; auto-reconnects on reload; stale-PXE recovery runs on sandbox restart.
-- **Next step:** redeploy all contracts (`cd tests/integration && npx tsx src/deploy.ts`) so the on-chain MarketFactory matches the updated source, then re-run `npx tsx src/create-market.ts` for a seed market.
-
-### Whitelist workaround
-
-- **Decision:** remove the whitelist requirement so any connected wallet can create markets. This unblocks the demo path without needing an admin-managed allowlist.
-- **Change applied to source:**
-  - [contracts/market_factory/src/main.nr](contracts/market_factory/src/main.nr) — the three-line whitelist check in `create_market` is commented out (kept in source for easy re-enablement). The `whitelist` storage map and `add_to_whitelist`/`remove_from_whitelist`/`is_whitelisted` functions remain intact.
-  - [tests/integration/src/create-market.ts](tests/integration/src/create-market.ts) — the admin `add_to_whitelist` call is removed since it's no longer needed.
-- **Status:** code updated on this branch. Pending: redeploy to take effect on-chain.
-- **To re-enable later:** uncomment lines 74–76 of `market_factory/src/main.nr`, restore the `add_to_whitelist` call in `create-market.ts`, regenerate artifacts (`aztec codegen`), redeploy.
+- **Create market** — `MarketFactory.create_market` enforces **bond > 0** and **end date in the future** only; the **whitelist gate is removed** in source (see *What's Done → Contracts*). **Redeploy** with `tests/integration/src/deploy.ts` so sandbox bytecode matches; an older deployment can still revert with "Creator not whitelisted" until replaced.
+- **Faucet** — TestToken mint from the Faucet page works for connected wallets.
+- **Wallet connect** — Account deploy via Sponsored FPC on first connect; auto-reconnect; stale PXE recovery on sandbox restart.
+- **After deploy:** run `npx tsx src/create-market.ts` to seed a market; `/create` in the app uses hashed fields + five `Fr` args (`CreateMarket.tsx`).
 
 ---
 
@@ -27,6 +18,7 @@ Last updated: 2026-04-16
 
 ### Contracts (Phase 1 — complete)
 - **All 5 contracts ported** from Aztec v0.75.0 to v4.1.3 and compile clean
+- **MarketFactory — open creation (2026-04-17)** — `create_market` no longer checks the whitelist map. Any address can create markets subject to **positive bond** and **end date in the future**. The `whitelist` storage map and `add_to_whitelist` / `remove_from_whitelist` / `is_whitelisted` methods remain for ABI compatibility but **do not gate** creation. Aligns product with SRS **FR-C-4** (bond-based open creation); original P1 whitelist was quality/spam control only (see `ideation.md`, `SRS.md`, `PHASES.md`).
 - **Two-phase initialization** on AMM, Oracle, PrivateVault, MarketFactory to break circular deployment dependency (PublicImmutable changed to PublicMutable + one-time `set_dependencies()`)
 - **TestToken** unchanged (no circular deps)
 - **Codegen regenerated** via `aztec codegen` — TypeScript wrappers in `tests/integration/src/artifacts/`
@@ -44,12 +36,20 @@ Last updated: 2026-04-16
 - **Sandbox restart detection** — `useAztecWallet` tracks the L1 rollup address; automatically nukes stale IndexedDB + clears wallet credentials when the sandbox rolls to a new rollup address
 - **Reset PXE button** — enumerates all IndexedDB databases matching `aztec` or `pxe` and deletes them all
 - **Export backup** — dumps all Aztec/PXE IndexedDB databases + `honkers:*` localStorage keys to a JSON download
-- **On-chain market fallback** — `useMarkets` tries the indexer API first; on failure falls back to reading `MarketFactory.get_next_market_id()` + `get_market_info(id)` directly via simulate calls. Null-guarded against stale contract addresses.
+- **On-chain market fallback** — `useMarkets` tries the indexer API first; on failure falls back to reading `MarketFactory.get_next_market_id()` + `get_market_info(id)` directly via simulate calls. Null-guarded against stale contract addresses. Indexer list responses use `{ markets }`; the hook also accepts `data` for compatibility.
+- **Trade flow** — `useTrade` runs `deposit_collateral` then `buy_shares` with five arguments. AMM `get_price_yes` / `get_price_no` (simulate) supplies `price_per_share`; `maxSlippage` is basis points applied to minimum `shares_out`. Two transactions (two proof cycles).
+- **Portfolio** — `usePXE.getPrivateNotes` uses `pxe.debug.getNotes` (PrivateVault slots 8=collateral, 9=shares, 10=winnings). `claim_winnings` passes `fee_recipient` from `VITE_FEE_RECIPIENT_ADDRESS` or falls back to `get_admin()`.
+
+### Indexer (public state)
+- **`node_getPublicStorageAt` + Poseidon2 map slots** — `@aztec/foundation` `poseidon2Hash([base_slot, market_id])` per codegen storage layouts (`tests/integration/src/artifacts/*`). `next_market_id` uses scalar slot **6** (not 8).
+- **`indexer/src/indexer/mapSlot.ts`** — shared `deriveMapSlot`; **`eventListener.ts`** upserts markets, updates oracle `resolutions`, appends `amm_snapshots`.
 
 ### Market Creation Script
 - `tests/integration/src/create-market.ts` — standalone Node.js script
 - Uses server-side PXE (`@aztec/pxe/server`) with `AdminWallet`
-- Whitelists admin → hashes question/criteria/source (SHA-256, truncated to 31 bytes for field) → `MarketFactory.create_market()` → `Oracle.register_market()`
+- Hashes question/criteria/source (SHA-256, truncated to 31 bytes for field) → `MarketFactory.create_market()` → `Oracle.register_market()` (no whitelist step)
+- `tests/integration/src/whitelist.ts` — optional; calls `add_to_whitelist` if you still want to record flags on-chain (not required for creation)
+- `tests/integration/src/redeploy-factory.ts` — helper when only MarketFactory bytecode changes (use full `deploy.ts` for greenfield)
 - Successfully created test market: "Will Bola Ahmed Tinubu win the 2027 Nigerian Presidential Election?" (hash `0x00a22e5706261089c02407859a5b71b7ff4d95c89d0da2479cfa89d1fc9895be`)
 
 ### Deployment
@@ -81,8 +81,11 @@ Last updated: 2026-04-16
 
 ### Open
 
-- **B4 — Indexer event parsing incomplete**: The indexer runs and polls blocks but doesn't fully parse MarketFactory/Oracle/AMM events. Markets list via indexer may be incomplete — the on-chain fallback compensates for now.
 - **B5 — Second error on retry (IndexedDB)**: "Failed to execute 'get' on 'IDBObjectStore': The transaction has finished" — IndexedDB transaction lifetime issue in PXE's kv-store. May surface after stale DB nuke during PXE init. Needs investigation.
+
+### Fixed (2026-04-17)
+
+- **B4 — Indexer public map reads**: Addressed by Poseidon2-derived map slots + `node_getPublicStorageAt` for MarketFactory, Oracle, and AMM (see `indexer/src/indexer/eventListener.ts`, `mapSlot.ts`). Re-verify against a live sandbox after deploy.
 
 ### Not Yet Tested (2026-04-15 changes)
 
@@ -97,12 +100,10 @@ Last updated: 2026-04-16
 
 ## What's Left (by priority)
 
-### P0 — Redeploy contracts to apply whitelist workaround
-- The whitelist assert in `MarketFactory.create_market` is commented out on this branch, but the deployed contract on sandbox still enforces it.
-- Run `cd tests/integration && npx tsx src/deploy.ts` to redeploy all five contracts with the updated source. This also refreshes `frontend/.env` with new contract addresses.
-- Then re-seed the test market: `npx tsx src/create-market.ts` (no longer whitelists first — goes straight to `create_market`).
-- After redeploy, any connected wallet should be able to create a market from the frontend `/create` page.
-- Note: sandbox state is ephemeral — every sandbox restart requires this same redeploy.
+### P0 — Redeploy contracts (sandbox restart or MarketFactory change)
+- Sandbox state is ephemeral — every restart: `cd tests/integration && npx tsx src/deploy.ts` (refreshes `frontend/.env`).
+- **After pulling MarketFactory changes** — same full deploy (or `redeploy-factory.ts` if you only replace factory); otherwise `/create` may still run old bytecode (e.g. whitelist revert).
+- Seed market: `npx tsx src/create-market.ts` (no whitelist step).
 - **Owner**: Anyone starting a dev session
 
 ### P0 — End-to-end test of B1 fix + auth refactor
@@ -111,25 +112,14 @@ Last updated: 2026-04-16
 - Verify protected routes show "Wallet required" when disconnected
 - **Owner**: Anyone with a running sandbox
 
-### P1 — Start indexer service
-- `cd indexer && pnpm dev` (requires `docker start honkers-postgres` first)
-- Verify `/api/markets` returns data
-- The on-chain fallback works for basic market listing but doesn't support detail views, price history, or search
-- **Owner**: Backend developer
+### P1 — Indexer + DB smoke test
+- With sandbox + Postgres: `cd indexer && pnpm dev`, then `curl -s http://localhost:3001/api/markets | head`
+- Confirm rows are not `"pending"` placeholders after a poll cycle
 
-### P1 — Fix frontend CreateMarket submission
-- [frontend/src/pages/CreateMarket.tsx:32-37](frontend/src/pages/CreateMarket.tsx:32) passes raw strings `[question, criteria, source, endUnix]` (4 args) to `create_market`. The contract expects 5 Field args: `question_hash, criteria_hash, source_hash, end_date, bond_amount`.
-- Required changes:
-  - Hash `question`/`criteria`/`source` client-side with SHA-256 truncated to 31 bytes (same scheme as [tests/integration/src/create-market.ts:34](tests/integration/src/create-market.ts:34) `hashString()`) and convert to `Fr`.
-  - Add a bond input to the form (USDC with 6 decimals; seed script uses `100_000_000n` = 100 USDC).
-  - Pass all five args as `Fr` values in the correct order.
-- Also store the original strings (question/criteria/source) somewhere queryable (indexer row or IPFS) so the frontend can render human-readable market cards — the contract only stores hashes.
-- **Owner**: Frontend developer
-
-### P1 — Wire remaining frontend flows
-- **Trade flow**: `useTrade` hook → AMM contract calls (`buy_outcome` / `sell_outcome`)
-- **Portfolio view**: Currently returns `[]` — needs contract view function calls for user positions
-- **Market detail page**: `useMarketDetail` only reads from indexer — needs on-chain fallback or indexer
+### P1 — Remaining frontend / product gaps
+- **Market detail page**: `useMarketDetail` still depends primarily on the indexer for prices — add on-chain AMM simulate fallback if the indexer is down
+- **Trade UX**: Two proof cycles per trade; optional batching or clearer step labels later
+- **Human-readable copy**: contract stores hashes only; ensure indexer (or other pipeline) stores question text for cards/detail
 - **Owner**: Frontend developer
 
 ### P2 — Integration hardening
@@ -168,6 +158,10 @@ cd indexer && DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers"
 # 6. Start frontend
 cd frontend && pnpm dev
 
+# 6b. Verification (optional)
+#    cd indexer && pnpm exec tsc --noEmit
+#    cd frontend && pnpm exec tsc --noEmit && pnpm run build
+
 # 7. If you see "block hash not found" errors after sandbox restart:
 #    - The rollup detection should auto-clear stale data on page reload
 #    - If it doesn't, click the "Reset PXE" button in the wallet UI
@@ -178,7 +172,8 @@ cd frontend && pnpm dev
 - **Aztec**: v4.1.3 sandbox on port 8080
 - **Vite**: dev server on port 5173, proxies `/rpc` → `localhost:8080`
 - **PostgreSQL**: `honkers-postgres` Docker container on port 5432
-- **Indexer**: port 3001 (not currently running)
+- **Indexer**: port 3001 (`INDEXER_PORT`). Optional env: `MARKET_FACTORY_ADDRESS`, `AMM_ADDRESS`, `ORACLE_ADDRESS`, `TEST_TOKEN_ADDRESS`, `AZTEC_RPC_URL` (default `http://localhost:8080`)
+- **Frontend**: optional `VITE_FEE_RECIPIENT_ADDRESS` for `claim_winnings` (else vault `get_admin()` via simulate)
 - **Admin secret**: `0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281`
 - **Admin address**: `0x0a60414ee907527880b7a53d4dacdeb9ef768bb98d9d8d1e7200725c13763331`
 
@@ -194,6 +189,8 @@ cd frontend && pnpm dev
 6. **Rollup address tracking** — Detects sandbox restarts and auto-clears stale PXE IndexedDB
 7. **On-chain fallback** — Markets page reads MarketFactory directly when indexer is offline
 8. **Global wallet context** — `WalletProvider` centralizes auth state; `ProtectedRoute` gates pages at the routing level instead of inline guards in each page
+9. **Indexer map slots** — `poseidon2([base_slot, market_id])` matches Aztec public map layout; base slots taken from codegen `ContractStorageLayout`
+10. **Open market creation** — Bond + schedule checks on-chain; no creator whitelist (see contracts section above)
 
 ---
 
@@ -209,10 +206,13 @@ cd frontend && pnpm dev
 | `frontend/src/components/auth/ProtectedRoute.tsx` | **Route-level auth gate for wallet-required pages** |
 | `frontend/src/hooks/useAztecWallet.ts` | PXE singleton + rollup detection + stale DB cleanup |
 | `frontend/src/hooks/useWallet.ts` | Re-exports `useWalletContext()` for backward compat |
-| `frontend/src/hooks/usePXE.ts` | Contract interaction (`simulateAndProve`) |
-| `frontend/src/hooks/useMarkets.ts` | Market fetching with on-chain fallback (null-guarded) |
+| `frontend/src/hooks/usePXE.ts` | `simulateAndProve`, `simulateView`, `getPrivateNotes` (PXE `debug.getNotes`) |
+| `frontend/src/hooks/useTrade.ts` | Deposit + `buy_shares` (AMM-priced) |
+| `frontend/src/hooks/usePortfolio.ts` | Vault note slots 8/9/10, `claim_winnings` with fee recipient |
+| `frontend/src/hooks/useMarkets.ts` | Indexer + on-chain fallback; accepts `data` or `markets` JSON |
 | `frontend/src/hooks/useFaucet.ts` | Testnet USDC faucet (calls TestToken.faucet) |
 | `frontend/src/utils/MinimalWallet.ts` | BaseWallet bridge for AccountManager |
+| `frontend/src/admin/AdminHome.tsx` | Admin stats + market table (whitelist UI removed) |
 | `frontend/src/components/wallet/WalletConnect.tsx` | Wallet UI + Reset PXE |
 | `frontend/src/components/AztecProvider.tsx` | PXE context provider |
 | `frontend/src/pages/Backup.tsx` | Export/import encrypted note backup |
@@ -222,6 +222,8 @@ cd frontend && pnpm dev
 | `frontend/vite.config.ts` | WASM/polyfill/proxy config |
 | `frontend/.env` | Contract addresses + RPC/indexer URLs |
 | `indexer/src/db/schema.sql` | Database DDL |
+| `indexer/src/indexer/mapSlot.ts` | Poseidon2 map slot derivation |
+| `indexer/src/indexer/eventListener.ts` | Poll + index factory/oracle/AMM public state |
 | `keeper/src/` | Auto-void bot + health monitoring |
 | `aztec-connect/` | Reusable wallet SDK |
 | `SETUP.md` | Setup guide (updated for v4.1.3) |

@@ -1,50 +1,65 @@
 // ---------------------------------------------------------------------------
 // usePortfolio — private USDC balance + positions from PXE, auto-claim logic
 // (FR-P-1 through FR-P-4)
+//
+// PrivateVault PrivateSet storage slots (codegen): collateral=8, shares=9, winnings=10.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react";
 import type { Position, WinningClaim } from "../types";
 import { aztecConfig } from "../config/aztec";
 import { usePXE } from "./usePXE";
+import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { Fr } from "@aztec/aztec.js/fields";
+
+const VAULT_COLLATERAL_SLOT = 8;
+const VAULT_SHARES_SLOT = 9;
+const VAULT_WINNINGS_SLOT = 10;
 
 export function usePortfolio(walletAddress: string | null) {
-  const { getPrivateNotes, simulateAndProve } = usePXE();
+  const { getPrivateNotes, simulateAndProve, simulateView } = usePXE();
   const [balance, setBalance] = useState<number>(0);
   const [positions, setPositions] = useState<Position[]>([]);
   const [winnings, setWinnings] = useState<WinningClaim[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const resolveFeeRecipient = useCallback(async (): Promise<AztecAddress> => {
+    if (aztecConfig.feeRecipient) {
+      return AztecAddress.fromString(aztecConfig.feeRecipient);
+    }
+    const admin = await simulateView(aztecConfig.contracts.privateVault, "get_admin", []);
+    return AztecAddress.fromString(String(admin));
+  }, [simulateView]);
+
   const refresh = useCallback(async () => {
     if (!walletAddress) return;
+    const vault = aztecConfig.contracts.privateVault;
+    if (!vault) return;
+
     setLoading(true);
     try {
-      // Fetch collateral notes for USDC balance
-      const collateralNotes = await getPrivateNotes(walletAddress, aztecConfig.contracts.privateVault);
-      const totalBalance = (collateralNotes as Array<{ amount: number }>).reduce(
-        (sum, n) => sum + (n.amount ?? 0),
-        0,
-      );
+      const collateralNotes = await getPrivateNotes(walletAddress, vault, VAULT_COLLATERAL_SLOT);
+      const totalBalance = collateralNotes.reduce((sum, n) => sum + Number(n.items[0] ?? 0n), 0);
       setBalance(totalBalance);
 
-      // Fetch share notes for positions
-      const shareNotes = await getPrivateNotes(walletAddress, aztecConfig.contracts.amm);
-      const pos: Position[] = (shareNotes as Array<{ market_id: number; side: number; amount: number; entry_price: number }>).map((n) => ({
-        marketId: n.market_id,
-        side: n.side === 1 ? "yes" : "no",
-        amount: n.amount,
-        entryPrice: n.entry_price,
-      }));
+      const shareNotes = await getPrivateNotes(walletAddress, vault, VAULT_SHARES_SLOT);
+      const pos: Position[] = shareNotes
+        .filter((n) => n.items.length >= 4)
+        .map((n) => ({
+          marketId: Number(n.items[0]),
+          side: n.items[1] === 1n ? "yes" : "no",
+          amount: Number(n.items[2]),
+          entryPrice: Number(n.items[3]),
+        }));
       setPositions(pos);
 
-      // Fetch winning notes
-      const winNotes = await getPrivateNotes(walletAddress, aztecConfig.contracts.privateVault);
-      const wins: WinningClaim[] = (winNotes as Array<{ market_id: number; amount: number; resolved_at: number }>)
-        .filter((n) => n.resolved_at > 0)
+      const winNotes = await getPrivateNotes(walletAddress, vault, VAULT_WINNINGS_SLOT);
+      const wins: WinningClaim[] = winNotes
+        .filter((n) => n.items.length >= 3 && (n.items[2] ?? 0n) > 0n)
         .map((n) => ({
-          marketId: n.market_id,
-          amount: n.amount,
-          resolvedAt: n.resolved_at,
+          marketId: Number(n.items[0]),
+          amount: Number(n.items[1]),
+          resolvedAt: Number(n.items[2]),
           claimed: false,
         }));
       setWinnings(wins);
@@ -55,19 +70,22 @@ export function usePortfolio(walletAddress: string | null) {
     }
   }, [walletAddress, getPrivateNotes]);
 
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   const claimWinnings = useCallback(
     async (marketId: number) => {
       if (!walletAddress) throw new Error("Not connected");
+      const feeRecipient = await resolveFeeRecipient();
       return simulateAndProve(
         aztecConfig.contracts.privateVault,
         "claim_winnings",
-        [marketId],
+        [new Fr(marketId), feeRecipient],
         walletAddress,
       );
     },
-    [walletAddress, simulateAndProve],
+    [walletAddress, simulateAndProve, resolveFeeRecipient],
   );
 
   return { balance, positions, winnings, loading, refresh, claimWinnings };

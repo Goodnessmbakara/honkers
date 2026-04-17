@@ -135,9 +135,7 @@ async function main() {
   const marketFactory = MarketFactoryContract.at(marketFactoryAddr, wallet);
   const oracle = OracleContract.at(oracleAddr, wallet);
 
-  // ── Step 6: Create market
-  // (Whitelist requirement removed from MarketFactory — any caller can create.)
-
+  // ── Step 6: Create market (open creation; bond + end date only)
   const questionHash = hashString(QUESTION);
   const criteriaHash = hashString(CRITERIA);
   const sourceHash = hashString(SOURCE);

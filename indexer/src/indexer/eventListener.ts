@@ -2,17 +2,12 @@
 // Aztec public event listener.
 //
 // Polls the Aztec node for new blocks and indexes public state changes from:
-//   - MarketFactory: market creation events (public state writes)
-//   - Oracle: resolution proposals, disputes, finalisations, voids
-//   - AMM: reserve changes (price snapshots)
+//   - MarketFactory: market creation (public map reads via poseidon2 slot derivation)
+//   - Oracle: resolution state / outcomes / timestamps
+//   - AMM: reserve snapshots and implied prices
 //
-// Architecture (v4.1.3):
-//   - Uses node_getPublicStorageAt to read public storage slots directly.
-//   - For scalar fields (next_market_id, etc.) we read the known storage slot.
-//   - For map fields (per-market data) we derive the slot with pedersen
-//     or read the count and then read per-index. Where slot derivation is not
-//     available, we fall back to reading the block and parsing events.
-//   - Uses a block-number watermark stored in `indexer_state` to resume.
+// Map slot formula (v4.1.3): poseidon2([base_slot, market_id])
+// Base slots match tests/integration/src/artifacts/* ContractStorageLayout.
 // ---------------------------------------------------------------------------
 
 import { config } from "../config.js";
@@ -23,29 +18,35 @@ import {
   setIndexerState,
 } from "../db/client.js";
 import { MarketStatus, ResolutionState } from "../types/index.js";
+import { deriveMapSlot } from "./mapSlot.js";
 
 const WATERMARK_KEY = "last_indexed_block";
 
-// ---------------------------------------------------------------------------
-// Storage slot constants from contract artifacts (codegen)
-// ---------------------------------------------------------------------------
-
-const SLOTS = {
-  marketFactory: {
-    next_market_id: "0x08", // Fr(8n)
-    // Maps (per-market): slots 10-15
-    // market_question_hash: base=10, market_criteria_hash: base=11, etc.
-    // Map slot = poseidon2([base_slot, market_id]) — computed at runtime if hash is available
-  },
-  oracle: {
-    // Maps (per-market):
-    // resolution_state: base=4, proposed_outcome: base=5, proposed_at: base=6
-  },
-  amm: {
-    // Maps (per-market):
-    // reserve_yes: base=6, reserve_no: base=7
-  },
+/** Base storage slot indices (Fr) from codegen — MarketFactoryContract.storage */
+const MF = {
+  next_market_id: 6n,
+  market_question_hash: 8n,
+  market_criteria_hash: 9n,
+  market_source_hash: 10n,
+  market_creator: 11n,
+  market_end_date: 12n,
+  market_bond: 13n,
 } as const;
+
+/** OracleContract.storage map bases */
+const OR = {
+  resolution_state: 4n,
+  proposed_outcome: 5n,
+  proposed_at: 6n,
+} as const;
+
+/** AMMContract.storage map bases */
+const AMM = {
+  reserve_yes: 5n,
+  reserve_no: 6n,
+} as const;
+
+const SCALE = 1_000_000n;
 
 /** JSON-RPC helper to call the Aztec node. */
 async function aztecRpc(method: string, params: unknown[] = []): Promise<any> {
@@ -61,16 +62,11 @@ async function aztecRpc(method: string, params: unknown[] = []): Promise<any> {
   return json.result;
 }
 
-/** Get the current block number from the Aztec node. */
 async function getBlockNumber(): Promise<number> {
   const result = await aztecRpc("node_getBlockNumber");
   return Number(result);
 }
 
-/**
- * Read a public storage slot from a deployed contract.
- * Uses node_getPublicStorageAt(referenceBlock, contractAddress, slot).
- */
 async function readPublicSlot(
   contractAddress: string,
   slotHex: string,
@@ -84,51 +80,89 @@ async function readPublicSlot(
   return String(result);
 }
 
+function parseFieldRpcValue(raw: string): bigint {
+  const t = raw.trim();
+  if (!t || t === "0x" || t === "0X") return 0n;
+  if (t.startsWith("0x") || t.startsWith("0X")) return BigInt(t);
+  return BigInt(t);
+}
+
+function fieldToHex64(field: bigint): string {
+  return `0x${field.toString(16).padStart(64, "0")}`;
+}
+
+function oracleStateToMarketStatus(oracleState: bigint): MarketStatus {
+  switch (Number(oracleState)) {
+    case 1:
+      return MarketStatus.ResolutionProposed;
+    case 2:
+      return MarketStatus.Resolved;
+    case 3:
+      return MarketStatus.Disputed;
+    case 4:
+      return MarketStatus.Voided;
+    default:
+      return MarketStatus.Open;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Market Factory indexing
 // ---------------------------------------------------------------------------
 
-/**
- * Read MarketFactory public state to discover new markets.
- *
- * Strategy: read `next_market_id` and compare against indexed markets.
- * For any new IDs, read per-market public slots (question_hash, creator, etc.).
- */
-async function indexMarketFactory(fromBlock: number, toBlock: number): Promise<void> {
+async function indexMarketFactory(_fromBlock: number, toBlock: number): Promise<void> {
   if (!config.contracts.marketFactory) return;
 
   try {
-    // Read next_market_id from known public storage slot (Fr(8n) = 0x08)
-    const nextIdRaw = await readPublicSlot(
-      config.contracts.marketFactory,
-      SLOTS.marketFactory.next_market_id,
-      toBlock,
-    );
-    const nextMarketId = Number(nextIdRaw);
-    if (nextMarketId <= 1) return; // no markets yet
+    const nextIdSlot = fieldToHex64(MF.next_market_id);
+    const nextIdRaw = await readPublicSlot(config.contracts.marketFactory, nextIdSlot, toBlock);
+    const nextMarketId = Number(parseFieldRpcValue(nextIdRaw));
+    if (nextMarketId <= 1) return;
 
-    // Check which markets we've already indexed
-    const existing = await query<{ market_id: string }>(
-      "SELECT market_id FROM markets ORDER BY market_id",
-    );
-    const existingIds = new Set(existing.map((r) => r.market_id));
-
-    // Index any missing markets
     for (let i = 1; i < nextMarketId; i++) {
       const mid = String(i);
-      if (existingIds.has(mid)) continue;
+      const mk = BigInt(i);
 
       try {
-        // TODO: Per-market data lives in map storage slots that require
-        // poseidon2(base_slot, market_id) derivation. Without the hash
-        // function available server-side, we insert the market with
-        // placeholder data. A future version should install @aztec/wallets
-        // and use executeUtility to call the view functions.
+        const qSlot = await deriveMapSlot(MF.market_question_hash, mk);
+        const cSlot = await deriveMapSlot(MF.market_criteria_hash, mk);
+        const sSlot = await deriveMapSlot(MF.market_source_hash, mk);
+        const crSlot = await deriveMapSlot(MF.market_creator, mk);
+        const edSlot = await deriveMapSlot(MF.market_end_date, mk);
+        const bSlot = await deriveMapSlot(MF.market_bond, mk);
+
+        const qHash = parseFieldRpcValue(await readPublicSlot(config.contracts.marketFactory, qSlot, toBlock));
+        const cHash = parseFieldRpcValue(await readPublicSlot(config.contracts.marketFactory, cSlot, toBlock));
+        const sHash = parseFieldRpcValue(await readPublicSlot(config.contracts.marketFactory, sSlot, toBlock));
+        const creatorF = parseFieldRpcValue(await readPublicSlot(config.contracts.marketFactory, crSlot, toBlock));
+        const endDateF = parseFieldRpcValue(await readPublicSlot(config.contracts.marketFactory, edSlot, toBlock));
+        const bondF = parseFieldRpcValue(await readPublicSlot(config.contracts.marketFactory, bSlot, toBlock));
+
+        const creatorHex = fieldToHex64(creatorF);
+        const endDateSec = Number(endDateF);
+        const endDate = new Date(endDateSec > 0 ? endDateSec * 1000 : Date.now());
+
         await execute(
           `INSERT INTO markets (market_id, question_hash, criteria_hash, source_hash, creator, end_date, bond_amount, status)
-           VALUES ($1, $2, $3, $4, $5, NOW() + INTERVAL '7 days', $6, $7)
-           ON CONFLICT (market_id) DO NOTHING`,
-          [mid, "pending", "pending", "pending", "pending", "0", MarketStatus.Open],
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (market_id) DO UPDATE SET
+             question_hash = EXCLUDED.question_hash,
+             criteria_hash = EXCLUDED.criteria_hash,
+             source_hash = EXCLUDED.source_hash,
+             creator = EXCLUDED.creator,
+             end_date = EXCLUDED.end_date,
+             bond_amount = EXCLUDED.bond_amount,
+             updated_at = NOW()`,
+          [
+            mid,
+            fieldToHex64(qHash),
+            fieldToHex64(cHash),
+            fieldToHex64(sHash),
+            creatorHex,
+            endDate,
+            bondF.toString(),
+            MarketStatus.Open,
+          ],
         );
 
         await execute(
@@ -138,7 +172,7 @@ async function indexMarketFactory(fromBlock: number, toBlock: number): Promise<v
           [mid, ResolutionState.Unresolved],
         );
 
-        console.log(`[indexer] Indexed new market #${mid} (metadata pending)`);
+        console.log(`[indexer] Upserted market #${mid} from chain`);
       } catch (err) {
         console.error(`[indexer] Failed to index market #${mid}:`, err);
       }
@@ -154,24 +188,47 @@ async function indexMarketFactory(fromBlock: number, toBlock: number): Promise<v
 // Oracle indexing
 // ---------------------------------------------------------------------------
 
-async function indexOracleResolutions(): Promise<void> {
+async function indexOracleResolutions(headBlock: number): Promise<void> {
   if (!config.contracts.oracle) return;
 
   try {
-    // Get all markets that haven't been finalised or voided yet
-    const pending = await query<{ market_id: string }>(
-      "SELECT market_id FROM resolutions WHERE state < 2",
-    );
+    const rows = await query<{ market_id: string }>("SELECT market_id FROM markets");
 
-    for (const { market_id } of pending) {
+    for (const { market_id } of rows) {
       try {
-        // TODO: resolution_state, proposed_outcome, proposed_at are in map storage
-        // (base slots 4, 5, 6 respectively). Need poseidon2(base_slot, market_id)
-        // to derive the actual slot. For now, skip per-market oracle reads
-        // until server-side hash derivation is available.
-        // The frontend reads oracle state directly via contract view functions
-        // through the embedded wallet, so this indexer gap doesn't block UI usage.
-        console.debug(`[indexer] Oracle state read for market ${market_id} skipped (map slot derivation not yet implemented)`);
+        const mk = BigInt(market_id);
+        const stSlot = await deriveMapSlot(OR.resolution_state, mk);
+        const outSlot = await deriveMapSlot(OR.proposed_outcome, mk);
+        const atSlot = await deriveMapSlot(OR.proposed_at, mk);
+
+        const st = parseFieldRpcValue(await readPublicSlot(config.contracts.oracle, stSlot, headBlock));
+        const outcome = parseFieldRpcValue(await readPublicSlot(config.contracts.oracle, outSlot, headBlock));
+        const proposedAtF = parseFieldRpcValue(await readPublicSlot(config.contracts.oracle, atSlot, headBlock));
+
+        const resState = Number(st);
+        const proposedAtSec = Number(proposedAtF);
+        const proposedAt =
+          proposedAtSec > 0 ? new Date(proposedAtSec * 1000) : null;
+        const proposedOutcome =
+          resState >= 1 && (outcome === 0n || outcome === 1n) ? Number(outcome) : null;
+
+        await execute(
+          `UPDATE resolutions SET
+             state = $1,
+             proposed_outcome = $2,
+             proposed_at = $3,
+             updated_at = NOW()
+           WHERE market_id = $4`,
+          [resState, proposedOutcome, proposedAt, market_id],
+        );
+
+        if (st > 0n) {
+          const mstat = oracleStateToMarketStatus(st);
+          await execute(`UPDATE markets SET status = $1, updated_at = NOW() WHERE market_id = $2`, [
+            mstat,
+            market_id,
+          ]);
+        }
       } catch (err) {
         console.error(`[indexer] Oracle read failed for market ${market_id}:`, (err as Error).message);
       }
@@ -185,6 +242,14 @@ async function indexOracleResolutions(): Promise<void> {
 // AMM price snapshots
 // ---------------------------------------------------------------------------
 
+function pricesFromReserves(ry: bigint, rn: bigint): { priceYes: number; priceNo: number } {
+  const sum = ry + rn;
+  if (sum === 0n) return { priceYes: 0, priceNo: 0 };
+  const py = Number((rn * SCALE) / sum) / Number(SCALE);
+  const pn = Number((ry * SCALE) / sum) / Number(SCALE);
+  return { priceYes: py, priceNo: pn };
+}
+
 async function indexAmmSnapshots(blockNumber: number): Promise<void> {
   if (!config.contracts.amm) return;
 
@@ -195,11 +260,20 @@ async function indexAmmSnapshots(blockNumber: number): Promise<void> {
 
     for (const { market_id } of markets) {
       try {
-        // TODO: reserve_yes and reserve_no are in map storage (base slots 6, 7).
-        // Need poseidon2(base_slot, market_id) to derive the actual slot.
-        // For now, skip AMM snapshot reads until server-side hash derivation is available.
-        // The frontend can read reserves directly via contract view functions.
-        console.debug(`[indexer] AMM snapshot for market ${market_id} skipped (map slot derivation not yet implemented)`);
+        const mk = BigInt(market_id);
+        const rySlot = await deriveMapSlot(AMM.reserve_yes, mk);
+        const rnSlot = await deriveMapSlot(AMM.reserve_no, mk);
+
+        const ry = parseFieldRpcValue(await readPublicSlot(config.contracts.amm, rySlot, blockNumber));
+        const rn = parseFieldRpcValue(await readPublicSlot(config.contracts.amm, rnSlot, blockNumber));
+
+        const { priceYes, priceNo } = pricesFromReserves(ry, rn);
+
+        await execute(
+          `INSERT INTO amm_snapshots (market_id, reserve_yes, reserve_no, price_yes, price_no, block_number)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [market_id, ry.toString(), rn.toString(), priceYes, priceNo, blockNumber],
+        );
       } catch {
         // AMM may not have this market initialised yet
       }
@@ -239,12 +313,12 @@ async function pollOnce(): Promise<void> {
     return;
   }
 
-  if (headBlock <= lastBlock) return; // nothing new
+  if (headBlock <= lastBlock) return;
 
   console.log(`[indexer] Processing blocks ${lastBlock + 1} → ${headBlock}`);
 
   await indexMarketFactory(lastBlock + 1, headBlock);
-  await indexOracleResolutions();
+  await indexOracleResolutions(headBlock);
   await indexAmmSnapshots(headBlock);
   await markHaltedMarkets();
 
@@ -257,15 +331,12 @@ export function startEventListener(): void {
 
   console.log(`[indexer] Starting event listener (poll every ${config.pollIntervalMs}ms)`);
 
-  // Initial poll
   pollOnce().catch((err) => console.error("[indexer] Poll error:", err));
 
-  // Recurring poll
   const interval = setInterval(() => {
     pollOnce().catch((err) => console.error("[indexer] Poll error:", err));
   }, config.pollIntervalMs);
 
-  // Graceful shutdown
   const shutdown = () => {
     running = false;
     clearInterval(interval);

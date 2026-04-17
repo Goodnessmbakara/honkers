@@ -96,9 +96,10 @@ export function useMarkets(params?: { status?: string; page?: number; limit?: nu
       if (params?.limit) qs.set("limit", String(params.limit));
       const res = await fetch(api(`/api/markets?${qs}`));
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json: ApiResponse<Market[]> = await res.json();
-      setMarkets(json.data);
-      setTotal(json.pagination?.total ?? json.data.length);
+      const json = (await res.json()) as ApiResponse<Market[]> & { markets?: Market[] };
+      const data = json.data ?? json.markets ?? [];
+      setMarkets(data);
+      setTotal(json.pagination?.total ?? data.length);
     } catch {
       // Indexer unavailable — fall back to on-chain reads
       try {

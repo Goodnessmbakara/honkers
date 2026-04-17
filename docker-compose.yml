@@ -104,7 +104,7 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_AZTEC_RPC_URL: http://localhost:8080
+      AZTEC_SANDBOX_URL: http://sandbox:8080
       VITE_INDEXER_API_URL: http://localhost:3001
     depends_on:
       sandbox:

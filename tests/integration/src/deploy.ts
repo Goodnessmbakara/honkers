@@ -14,9 +14,12 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { Fr } from "@aztec/aztec.js/fields";
 import { AccountManager } from "@aztec/aztec.js/wallet";
 import { SchnorrAccountContract } from "@aztec/accounts/schnorr";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
+import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import { createPXE } from "@aztec/pxe/server";
 import { getPXEConfig } from "@aztec/pxe/config";
+import { SponsoredFPCContractArtifact } from "@aztec/noir-contracts.js/SponsoredFPC";
 
 import { AMMContract } from "./artifacts/AMM.js";
 import { OracleContract } from "./artifacts/Oracle.js";
@@ -100,13 +103,25 @@ async function main() {
   const adminAddress = account.getAddress();
   console.log(`  Admin address: ${adminAddress}`);
 
+  // Set up Sponsored FPC — pays fees unconditionally on sandbox/devnet
+  console.log("  Setting up Sponsored FPC...");
+  const sponsoredFPCInstance = await getContractInstanceFromInstantiationParams(
+    SponsoredFPCContractArtifact,
+    { salt: Fr.ZERO },
+  );
+  await wallet.registerContract(sponsoredFPCInstance, SponsoredFPCContractArtifact);
+  const paymentMethod = new SponsoredFeePaymentMethod(sponsoredFPCInstance.address);
+  console.log(`  Sponsored FPC @ ${sponsoredFPCInstance.address}`);
+
+  const sendOpts = { from: AztecAddress.ZERO, fee: { paymentMethod } };
+
   // Deploy the admin account contract if needed
   if (await accountManager.hasInitializer()) {
     const existing = await pxe.getContractInstance(adminAddress);
     if (!existing) {
       console.log("  Deploying admin account contract...");
       const deployMethod = await accountManager.getDeployMethod();
-      await deployMethod.send().wait();
+      await deployMethod.send(sendOpts).wait();
       console.log("  Admin account deployed.");
     } else {
       console.log("  Admin account already deployed.");
@@ -116,7 +131,9 @@ async function main() {
   // Fee recipient = sandbox account 1 (or admin itself for simplicity)
   const feeRecipient = adminAddress;
 
-  // ── Phase 1: Deploy contracts ────────────────────────────────────────
+  const contractSendOpts = { from: adminAddress, fee: { paymentMethod } };
+
+  // ── Phase 1: Deploy contracts (admin-only constructors) ────────────
   console.log("\n--- Phase 1: Deploying contracts ---\n");
 
   console.log("Deploying TestToken...");
@@ -125,12 +142,12 @@ async function main() {
     adminAddress,
     1, // name field (numeric encoding)
     2 // symbol field (numeric encoding)
-  ).send({ from: adminAddress });
+  ).send(contractSendOpts);
   const tokenAddress = tokenResult.contract.address;
   console.log(`  TestToken deployed: ${tokenAddress}`);
 
   console.log("Deploying AMM...");
-  const ammResult = await AMMContract.deploy(wallet, adminAddress).send({ from: adminAddress });
+  const ammResult = await AMMContract.deploy(wallet, adminAddress).send(contractSendOpts);
   const ammAddress = ammResult.contract.address;
   console.log(`  AMM deployed: ${ammAddress}`);
 
@@ -138,7 +155,7 @@ async function main() {
   const oracleResult = await OracleContract.deploy(
     wallet,
     adminAddress
-  ).send({ from: adminAddress });
+  ).send(contractSendOpts);
   const oracleAddress = oracleResult.contract.address;
   console.log(`  Oracle deployed: ${oracleAddress}`);
 
@@ -147,7 +164,7 @@ async function main() {
     wallet,
     adminAddress,
     feeRecipient
-  ).send({ from: adminAddress });
+  ).send(contractSendOpts);
   const vaultAddress = vaultResult.contract.address;
   console.log(`  PrivateVault deployed: ${vaultAddress}`);
 
@@ -155,7 +172,7 @@ async function main() {
   const factoryResult = await MarketFactoryContract.deploy(
     wallet,
     adminAddress
-  ).send({ from: adminAddress });
+  ).send(contractSendOpts);
   const factoryAddress = factoryResult.contract.address;
   console.log(`  MarketFactory deployed: ${factoryAddress}`);
 
@@ -168,23 +185,23 @@ async function main() {
   const factory = factoryResult.contract;
 
   console.log("AMM.set_dependencies(vault, oracle)...");
-  await amm.methods.set_dependencies(vaultAddress, oracleAddress).send({ from: adminAddress });
+  await amm.methods.set_dependencies(vaultAddress, oracleAddress).send(contractSendOpts);
   console.log("  Done.");
 
   console.log("Oracle.set_dependencies(amm)...");
-  await oracle.methods.set_dependencies(ammAddress).send({ from: adminAddress });
+  await oracle.methods.set_dependencies(ammAddress).send(contractSendOpts);
   console.log("  Done.");
 
   console.log("PrivateVault.set_dependencies(token, amm, oracle)...");
   await vault.methods
     .set_dependencies(tokenAddress, ammAddress, oracleAddress)
-    .send({ from: adminAddress });
+    .send(contractSendOpts);
   console.log("  Done.");
 
   console.log("MarketFactory.set_dependencies(amm, oracle, token)...");
   await factory.methods
     .set_dependencies(ammAddress, oracleAddress, tokenAddress)
-    .send({ from: adminAddress });
+    .send(contractSendOpts);
   console.log("  Done.");
 
   // ── Output addresses ─────────────────────────────────────────────────

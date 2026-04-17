@@ -12,6 +12,10 @@ pnpm-lock.yaml
 # Noir / Aztec build artifacts
 contracts/target/
 tests/noir/target/
+tests/integration/codegenCache.json
+
+# TypeScript incremental
+*.tsbuildinfo
 
 # Playwright
 tests/e2e/test-results/

@@ -11,12 +11,41 @@ import { getArtifact } from "../config/contractArtifacts";
 import { useAztecWallet } from "./useAztecWallet";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { Fr } from "@aztec/aztec.js/fields";
+import type { NotesFilter } from "@aztec/pxe/server";
+import { NoteStatus } from "@aztec/stdlib/note";
+import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
+import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
+import type { MinimalWallet } from "../utils/MinimalWallet";
 
 interface PxeHealth {
   ok: boolean;
   blockNumber: number | null;
   error: string | null;
 }
+
+/** Cached Sponsored FPC setup — registered once per wallet instance */
+let sponsoredFPCPromise: Promise<SponsoredFeePaymentMethod> | null = null;
+let sponsoredFPCWallet: unknown = null; // track which wallet instance we registered for
+
+async function getSponsoredFPC(wallet: MinimalWallet): Promise<SponsoredFeePaymentMethod> {
+  if (sponsoredFPCPromise && sponsoredFPCWallet === wallet) return sponsoredFPCPromise;
+  sponsoredFPCWallet = wallet;
+  sponsoredFPCPromise = (async () => {
+    const { SponsoredFPCContractArtifact } = await import("@aztec/noir-contracts.js/SponsoredFPC");
+    const instance = await getContractInstanceFromInstantiationParams(
+      SponsoredFPCContractArtifact,
+      { salt: Fr.ZERO },
+    );
+    await wallet.registerContract(instance, SponsoredFPCContractArtifact);
+    return new SponsoredFeePaymentMethod(instance.address);
+  })();
+  sponsoredFPCPromise.catch(() => { sponsoredFPCPromise = null; });
+  return sponsoredFPCPromise;
+}
+
+/** Raw note fields decoded from PXE (PrivateSet note preimage). */
+export type PrivateNotePayload = { items: bigint[] };
 
 export function usePXE() {
   const { pxeInstance } = useAztecWallet();
@@ -44,15 +73,42 @@ export function usePXE() {
   }, []);
 
   const getPrivateNotes = useCallback(
-    async (_owner: string, _contractAddress: string) => {
-      // In v4.1.3, private notes are queried via contract view functions
-      // through the local PXE, not via a generic "getNotes" RPC.
-      // This is a stub — individual components should call contract
-      // view/utility functions directly via the wallet.
-      console.warn("[usePXE] getPrivateNotes is a stub in v4.1.3. Use contract view functions instead.");
-      return [] as unknown[];
+    async (owner: string, contractAddress: string, storageSlot: number): Promise<PrivateNotePayload[]> => {
+      if (!pxeInstance?.pxe) return [];
+      const pxe = pxeInstance.pxe;
+      const ownerAddr = AztecAddress.fromString(owner);
+      const contractAddr = AztecAddress.fromString(contractAddress);
+      const filter: NotesFilter = {
+        contractAddress: contractAddr,
+        owner: ownerAddr,
+        storageSlot: new Fr(BigInt(storageSlot)),
+        status: NoteStatus.ACTIVE,
+        scopes: [ownerAddr],
+      };
+      try {
+        const rows = await pxe.debug.getNotes(filter);
+        return rows.map((r) => ({
+          items: r.note.items.map((f) => f.toBigInt()),
+        }));
+      } catch (err) {
+        console.warn("[usePXE] getPrivateNotes failed:", err);
+        return [];
+      }
     },
-    [],
+    [pxeInstance],
+  );
+
+  /** Simulate a public/utility view function (no tx, no proof). */
+  const simulateView = useCallback(
+    async (contractAddress: string, functionName: string, args: unknown[]) => {
+      if (!wallet) throw new Error("Wallet not initialized. Wait for AztecProvider to load.");
+      const artifact = getArtifact(contractAddress);
+      const address = AztecAddress.fromString(contractAddress);
+      const contract = Contract.at(address, artifact, wallet);
+      const fn = contract.methods[functionName] as (...a: unknown[]) => { simulate: () => Promise<unknown> };
+      return fn(...args).simulate();
+    },
+    [wallet],
   );
 
   const simulateAndProve = useCallback(
@@ -76,10 +132,13 @@ export function usePXE() {
 
         onStep?.("proving");
 
-        // The SDK handles simulation + proving + submission internally
-        // send() waits for mining by default and returns { receipt, ... }
+        // Set up Sponsored FPC so the user doesn't need Fee Juice balance
+        const paymentMethod = await getSponsoredFPC(wallet);
         const fromAddress = AztecAddress.fromString(from);
-        const result = await contract.methods[functionName](...(args as never[])).send({ from: fromAddress });
+        const result = await contract.methods[functionName](...(args as never[])).send({
+          from: fromAddress,
+          fee: { paymentMethod },
+        });
 
         onStep?.("submitting");
         onStep?.("confirmed");
@@ -99,5 +158,5 @@ export function usePXE() {
     abortRef.current = null;
   }, []);
 
-  return { health, checkHealth, getPrivateNotes, simulateAndProve, cancelProof };
+  return { health, checkHealth, getPrivateNotes, simulateView, simulateAndProve, cancelProof };
 }

@@ -28,6 +28,9 @@ export const aztecConfig = {
     testToken: import.meta.env.VITE_TEST_TOKEN_ADDRESS ?? "",
   },
 
+  /** Platform fee recipient for `claim_winnings`; falls back to vault admin via `get_admin` if unset. */
+  feeRecipient: import.meta.env.VITE_FEE_RECIPIENT_ADDRESS ?? "",
+
   /** Update the PXE URL override (persisted to localStorage). */
   setPxeUrl(url: string | null) {
     if (url) {

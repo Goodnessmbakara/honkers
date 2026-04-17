@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// CMP-NAV-PRIMARY — Markets, Portfolio, Create (if whitelisted), Faucet
+// CMP-NAV-PRIMARY — Markets, Portfolio, Create, Faucet
 // ---------------------------------------------------------------------------
 
 import { NavLink } from "react-router-dom";

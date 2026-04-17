@@ -20,7 +20,7 @@ export function Terms() {
         <h2 style={{ color: "var(--text-primary)" }}>2. Eligibility</h2>
         <p>
           You must not access this platform from a restricted jurisdiction.
-          Market creation is limited to whitelisted addresses.
+          Anyone may propose a market subject to the posted bond and protocol rules; invalid markets may be voided per resolution policy.
         </p>
         <h2 style={{ color: "var(--text-primary)" }}>3. Risks</h2>
         <p>

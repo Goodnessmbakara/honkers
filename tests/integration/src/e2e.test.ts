@@ -280,25 +280,20 @@ describe('Honkers — Contract Deployment & Basic Operations', () => {
   });
 
   // -------------------------------------------------------------------------
-  // 6. MarketFactory whitelist
+  // 6. MarketFactory — open creation (bond + future end date only)
   // -------------------------------------------------------------------------
 
   describe('MarketFactory', () => {
-    it('non-whitelisted cannot create market', async () => {
-      try {
-        await factory.methods
-          .create_market(1n, 1n, 1n, BigInt(Math.floor(Date.now() / 1000) + 172800), 500_000_000n)
-          .send({ from: traderAddress });
-        assert.fail('Should have thrown');
-      } catch (err: any) {
-        assert.ok(
-          err.message.includes('whitelist') || err.message.includes('Whitelist') || err.message.includes('not'),
-          err.message,
-        );
-      }
+    it('non-admin trader can create market without whitelist', async () => {
+      const endDate = BigInt(Math.floor(Date.now() / 1000) + 172800);
+      await factory.methods
+        .create_market(1n, 1n, 1n, endDate, 500_000_000n)
+        .send({ from: traderAddress });
+      const nextId = await factory.methods.get_next_market_id().simulate();
+      assert.equal(nextId.result, 2n);
     });
 
-    it('admin can whitelist a creator', async () => {
+    it('admin can still record whitelist flag (storage only)', async () => {
       await factory.methods.add_to_whitelist(adminAddress)
         .send({ from: adminAddress });
       const result = await factory.methods.is_whitelisted(adminAddress).simulate();

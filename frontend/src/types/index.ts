@@ -106,6 +106,8 @@ export type ProofStep = "witness" | "proving" | "submitting" | "confirmed" | "fa
 export interface TradeParams {
   marketId: number;
   side: TradeSide;
+  /** Collateral amount in micro-USDC (same integer units as TestToken / vault). */
   amount: number;
+  /** Slippage tolerance in basis points (e.g. 500 = 5%). Applied to min shares_out. */
   maxSlippage: number;
 }

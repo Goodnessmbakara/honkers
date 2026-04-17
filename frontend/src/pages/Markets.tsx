@@ -4,6 +4,8 @@
 // ---------------------------------------------------------------------------
 
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { PlusCircle } from "lucide-react";
 import { useMarkets } from "../hooks/useMarkets";
 import { MarketCard, MarketCardSkeleton } from "../components/market/MarketCard";
 import type { MarketStatus } from "../types";
@@ -17,6 +19,7 @@ const statusFilters: { label: string; value: MarketStatus | "" }[] = [
 ];
 
 export function Markets() {
+  const navigate = useNavigate();
   const [status, setStatus] = useState<MarketStatus | "">("");
   const [page, setPage] = useState(1);
   const { markets, total, loading, error } = useMarkets({
@@ -29,7 +32,17 @@ export function Markets() {
 
   return (
     <div className="page">
-      <h1 style={{ marginBottom: "var(--space-6)" }}>Markets</h1>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-6)" }}>
+        <h1>Markets</h1>
+        <button
+          className="btn-primary"
+          onClick={() => navigate("/create")}
+          style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}
+        >
+          <PlusCircle size={16} />
+          Create market
+        </button>
+      </div>
 
       {/* Filters */}
       <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-6)" }}>
@@ -62,13 +75,23 @@ export function Markets() {
       >
         {loading
           ? Array.from({ length: 6 }).map((_, i) => <MarketCardSkeleton key={i} />)
-          : markets.map((m) => <MarketCard key={m.marketId} market={m} />)}
+          : markets?.map((m) => <MarketCard key={m.marketId} market={m} />)}
       </div>
 
-      {markets.length === 0 && !loading && (
-        <p style={{ color: "var(--text-muted)", textAlign: "center", padding: "var(--space-10) 0" }}>
-          No markets found.
-        </p>
+      {(markets?.length ?? 0) === 0 && !loading && (
+        <div style={{ textAlign: "center", padding: "var(--space-16) 0" }}>
+          <p style={{ color: "var(--text-muted)", marginBottom: "var(--space-4)" }}>
+            No markets found.
+          </p>
+          <button
+            className="btn-primary"
+            onClick={() => navigate("/create")}
+            style={{ display: "inline-flex", alignItems: "center", gap: "var(--space-2)" }}
+          >
+            <PlusCircle size={16} />
+            Create the first market
+          </button>
+        </div>
       )}
 
       {/* Pagination */}
