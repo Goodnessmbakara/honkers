@@ -18,8 +18,8 @@ const api = (path: string) => `${aztecConfig.indexerUrl}${path}`;
 // Known market questions — maps questionHash to human-readable text.
 // In production this would come from the indexer / IPFS / metadata service.
 const KNOWN_QUESTIONS: Record<string, string> = {
-  "0x00a22e5706261089c02407859a5b71b7ff4d95c89d0da2479cfa89d1fc9895be":
-    "Will Bola Ahmed Tinubu win the 2027 Nigerian Presidential Election?",
+  "0x00762187ff993c3095a609b997a1894c40eb6d6a70b2c16016ad6f752342f809":
+    "Will Bitcoin (BTC) reach $200,000 USD by December 31, 2026?",
 };
 
 function mapIndexerStatus(s: string | undefined): MarketStatus {
@@ -101,35 +101,55 @@ export function useMarkets(params?: { status?: string; page?: number; limit?: nu
 
   const fetchFromChain = useCallback(async (): Promise<Market[]> => {
     if (!pxeInstance) return [];
-    const { wallet } = pxeInstance;
+    const { wallet, pxe, aztecNode } = pxeInstance;
     const factoryAddr = aztecConfig.contracts.marketFactory;
     if (!factoryAddr) return [];
 
     const artifact = getArtifact(factoryAddr);
     const address = AztecAddress.fromString(factoryAddr);
+
+    // Register the contract with the PXE if not already registered.
+    // The PXE requires contract registration before simulate() — its
+    // ensureContractSynced step will fail on unregistered contracts.
+    try {
+      const existing = await pxe.getContractInstance(address);
+      if (!existing) {
+        const instance = await aztecNode.getContract(address);
+        if (!instance) {
+          console.warn("[useMarkets] MarketFactory not found on-chain at", factoryAddr);
+          return [];
+        }
+        await pxe.registerContract({ instance, artifact });
+        console.log("[useMarkets] Registered MarketFactory with PXE");
+      }
+    } catch (regErr) {
+      console.warn("[useMarkets] Contract registration failed:", regErr);
+    }
+
     const contract = Contract.at(address, artifact, wallet);
 
     // Read next_market_id to know how many markets exist
     const nextIdRaw = await contract.methods.get_next_market_id().simulate();
-    const nextId = Number(nextIdRaw);
+    const nextId = Number(fieldLikeToBigInt(unwrapSimulate(nextIdRaw)));
     if (nextId <= 1) return []; // no markets
 
     const results: Market[] = [];
     for (let id = 1; id < nextId; id++) {
       try {
-        const info = await contract.methods.get_market_info(id).simulate();
+        const infoRaw = await contract.methods.get_market_info(id).simulate();
+        const info = unwrapSimulate(infoRaw) as unknown;
         if (!info) {
           console.warn(`[useMarkets] Market ${id}: simulate returned undefined (stale contract address?)`);
           continue;
         }
         // info is a tuple: (questionHash, criteriaHash, sourceHash, creator, endDate, bond)
-        const raw = info as unknown as unknown[];
-        const questionHash = raw[0] as bigint | undefined;
-        const criteriaHash = raw[1] as bigint | undefined;
-        const sourceHash = raw[2] as bigint | undefined;
+        const raw = Array.isArray(info) ? info : typeof info === "object" ? Object.values(info as object) : [];
+        const questionHash = raw[0] != null ? fieldLikeToBigInt(raw[0]) : undefined;
+        const criteriaHash = raw[1] != null ? fieldLikeToBigInt(raw[1]) : undefined;
+        const sourceHash = raw[2] != null ? fieldLikeToBigInt(raw[2]) : undefined;
         const creator = raw[3] as { toString(): string } | undefined;
-        const endDate = raw[4] as bigint | undefined;
-        const bond = raw[5] as bigint | undefined;
+        const endDate = raw[4] != null ? fieldLikeToBigInt(raw[4]) : undefined;
+        const bond = raw[5] != null ? fieldLikeToBigInt(raw[5]) : undefined;
 
         if (questionHash == null || creator == null) {
           console.warn(`[useMarkets] Market ${id}: incomplete data from chain, skipping`);
@@ -169,10 +189,19 @@ export function useMarkets(params?: { status?: string; page?: number; limit?: nu
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as ApiResponse<Market[]> & { markets?: Market[] };
       const data = json.data ?? json.markets ?? [];
-      setMarkets(data);
-      setTotal(json.pagination?.total ?? data.length);
+
+      // If indexer returned markets, use them
+      if (data.length > 0) {
+        setMarkets(data);
+        setTotal(json.pagination?.total ?? data.length);
+        return;
+      }
+
+      // Indexer returned 0 markets — it may not have parsed events yet.
+      // Fall through to on-chain fallback if wallet is connected.
+      throw new Error("indexer:empty");
     } catch {
-      // Indexer unavailable — fall back to on-chain reads
+      // Indexer unavailable or empty — fall back to on-chain reads
       try {
         const onChainMarkets = await fetchFromChain();
         setMarkets(onChainMarkets);
@@ -202,15 +231,29 @@ export function useMarketDetail(marketId: number | null) {
   const fetchMarketDetailFromChain = useCallback(
     async (id: number): Promise<MarketDetail | null> => {
       if (!pxeInstance) return null;
-      const { wallet } = pxeInstance;
+      const { wallet, pxe, aztecNode } = pxeInstance;
       const factoryAddr = aztecConfig.contracts.marketFactory;
       const ammAddr = aztecConfig.contracts.amm;
       if (!factoryAddr || !ammAddr) return null;
 
       const factoryArtifact = getArtifact(factoryAddr);
       const ammArtifact = getArtifact(ammAddr);
-      const factory = Contract.at(AztecAddress.fromString(factoryAddr), factoryArtifact, wallet);
-      const amm = Contract.at(AztecAddress.fromString(ammAddr), ammArtifact, wallet);
+      const factoryAddress = AztecAddress.fromString(factoryAddr);
+      const ammAddress = AztecAddress.fromString(ammAddr);
+
+      // Register contracts with PXE if not already registered
+      for (const [addr, art] of [[factoryAddress, factoryArtifact], [ammAddress, ammArtifact]] as const) {
+        try {
+          const existing = await pxe.getContractInstance(addr);
+          if (!existing) {
+            const instance = await aztecNode.getContract(addr);
+            if (instance) await pxe.registerContract({ instance, artifact: art });
+          }
+        } catch { /* already registered or unavailable */ }
+      }
+
+      const factory = Contract.at(factoryAddress, factoryArtifact, wallet);
+      const amm = Contract.at(ammAddress, ammArtifact, wallet);
       const mid = BigInt(id);
 
       const infoRaw = await factory.methods.get_market_info(mid).simulate();

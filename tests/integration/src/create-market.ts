@@ -25,10 +25,10 @@ const ADMIN_SECRET = Fr.fromHexString(
 );
 
 // Market parameters
-const QUESTION = "Will Bola Ahmed Tinubu win the 2027 Nigerian Presidential Election?";
-const CRITERIA = "Resolves YES if Bola Ahmed Tinubu is declared winner of the 2027 Nigerian Presidential Election by INEC (Independent National Electoral Commission). Resolves NO otherwise.";
-const SOURCE = "Official INEC declaration at https://www.inecnigeria.org";
-const END_DATE_ISO = "2027-03-15T00:00:00Z"; // Nigerian elections typically in Feb/Mar
+const QUESTION = "Will Bitcoin (BTC) reach $200,000 USD by December 31, 2026?";
+const CRITERIA = "Resolves YES if the Bitcoin spot price on Coinbase Pro exceeds $200,000 USD at any point between market creation and December 31, 2026 23:59:59 UTC. Resolves NO if this price is never reached by that deadline.";
+const SOURCE = "Coinbase Pro BTC/USD spot price feed at https://api.coinbase.com/v2/prices/BTC-USD/spot";
+const END_DATE_ISO = "2026-12-31T23:59:59Z";
 const BOND_AMOUNT = 100_000_000n; // 100 USDC (6 decimals)
 
 function hashString(s: string): Fr {

@@ -1,7 +1,7 @@
 # Honkers — Handoff Document
 
 Status snapshot for co-contributors picking up the project.
-Last updated: 2026-04-17
+Last updated: 2026-04-19
 
 ---
 
@@ -166,38 +166,107 @@ pnpm verify:stack
 
 ## How to Resume Development
 
+### Prerequisites (local PC — first time only)
+
+Install before cloning if not already present:
+
+| Tool | Version | Install |
+|------|---------|---------|
+| Node.js | 20 LTS | https://nodejs.org or `nvm install 20` |
+| pnpm | 10 | `npm install -g pnpm@10` |
+| Docker Desktop | latest | https://docs.docker.com/get-docker/ |
+| Git | any | https://git-scm.com |
+
 ```bash
-# 1. Start sandbox (if not running)
-aztec start --sandbox
+# Clone
+git clone https://github.com/Goodnessmbakara/honkers.git
+cd honkers
 
-# 2. Start Postgres (if not running)
-docker start honkers-postgres
-
-# 3. Deploy contracts (REQUIRED after every sandbox restart)
-cd tests/integration && pnpm exec tsx src/deploy.ts && cd ../..
-
-# 4. Create test market
-cd tests/integration && pnpm exec tsx src/create-market.ts && cd ../..
-
-# 5. Run DB migration (if using indexer)
-cd indexer && DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" pnpm exec tsx src/db/migrate.ts && cd ..
-
-# 5b. Start indexer (separate terminal), then from repo root:
-#    pnpm verify:stack
-
-# 6. Start frontend
-cd frontend && pnpm dev
-
-# 6b. Verification (optional)
-#    pnpm verify:stack
-#    cd indexer && pnpm exec tsc --noEmit
-#    cd frontend && pnpm exec tsc --noEmit && pnpm run build
-
-# 7. If you see "block hash not found" errors after sandbox restart:
-#    - The rollup detection should auto-clear stale data on page reload
-#    - If it doesn't, click the "Reset PXE" button in the wallet UI
-#    - Or run in browser console: indexedDB.deleteDatabase("pxe/aztec-pxe-honkers")
+# Install all workspace dependencies
+pnpm install          # root
+cd tests/integration && pnpm install && cd ../..
+cd frontend && pnpm install && cd ..
+cd indexer && pnpm install && cd ..
 ```
+
+### Running the stack (Docker — recommended for all environments)
+
+```bash
+# 1. Start all services (ethereum, sandbox, postgres, indexer, keeper, frontend)
+docker compose up -d
+
+# 2. Wait for sandbox to be healthy (~60s), then deploy contracts
+#    Watch progress: docker compose logs -f sandbox
+cd tests/integration && npx tsx src/deploy.ts && cd ../..
+
+# 3. Seed a test market
+cd tests/integration && npx tsx src/create-market.ts && cd ../..
+
+# 4. Rebuild frontend with the new contract addresses written to frontend/.env
+docker compose up -d --build frontend
+
+# 5. Open in browser
+#    Local PC:   http://localhost:5173
+#    GitHub Codespace: use the forwarded port URL shown in VS Code "Ports" panel
+#
+#    - Connect wallet (Sponsored FPC deploys account contract on first connect)
+#    - Use faucet to mint test tokens
+#    - Markets page shows the Bitcoin market via on-chain fallback
+```
+
+> **Note for Codespace users only:** The browser cannot reach `localhost:8080` or
+> `localhost:3001` directly. The Vite dev server already proxies both via `/rpc`
+> and `/api`. On a local PC with Docker Desktop, `localhost` works fine.
+
+### Every time the sandbox restarts (volumes removed or `docker compose down -v`)
+
+Contracts are wiped on restart. Repeat steps 2–4:
+
+```bash
+cd tests/integration && npx tsx src/deploy.ts && cd ../..
+cd tests/integration && npx tsx src/create-market.ts && cd ../..
+docker compose up -d --build frontend
+```
+
+Then **clear browser site data** for `localhost:5173` (or open incognito) to flush the stale PXE IndexedDB.
+
+### Running without Docker (local PC only)
+
+```bash
+# Terminal 1 — Aztec sandbox
+npx @aztec/aztec@0.84.0 start --sandbox
+
+# Terminal 2 — PostgreSQL
+docker run -d --name honkers-pg -e POSTGRES_USER=honkers   -e POSTGRES_PASSWORD=honkers -e POSTGRES_DB=honkers   -p 5432:5432 postgres:16-alpine
+
+# Terminal 3 — Deploy contracts + seed market
+cd tests/integration
+npx tsx src/deploy.ts
+npx tsx src/create-market.ts
+cd ../..
+
+# Terminal 4 — Indexer
+cd indexer
+DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" AZTEC_RPC_URL="http://localhost:8080" npx tsx src/db/migrate.ts
+DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" pnpm dev
+cd ..
+
+# Terminal 5 — Frontend
+cd frontend && pnpm dev
+# Open http://localhost:5173
+```
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `MarketFactory not found on-chain` | Sandbox restarted — run deploy + create-market + rebuild frontend (steps 2–4) |
+| `block hash not found` / blank Markets | Clear browser site data for `localhost:5173` or open incognito |
+| Markets page empty (wallet connected) | Contract addresses in `frontend/.env` are stale — rebuild frontend after deploy |
+| `ERR_CONNECTION_REFUSED` to `localhost:3001` | Only in Codespace — `/api` Vite proxy handles this (already wired) |
+| `Cannot read properties of undefined (toString)` | Fixed in `useMarkets.ts` — pull latest and rebuild frontend |
+| Docker build fails on first run | Run `pnpm install` in `frontend/` and `tests/integration/` first |
+
 
 ### Environment
 - **Aztec**: v4.1.3 sandbox on port 8080

@@ -173,6 +173,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/rpc/, ''),
       },
+      // Proxy indexer API — browser can't reach localhost:3001 in Codespace
+      '/api': {
+        target: process.env.INDEXER_URL || 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
     fs: {
       allow: [

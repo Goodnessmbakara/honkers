@@ -227,7 +227,8 @@ async function main() {
 
   const frontendEnv = [
     `VITE_AZTEC_RPC_URL=/rpc`,
-    `VITE_INDEXER_API_URL=http://localhost:3001`,
+    `VITE_INDEXER_API_URL=`,
+    // ^ Leave empty so the frontend uses the Vite /api proxy (works in Codespace/Docker)
     `VITE_ADMIN_ADDRESS=${addresses.ADMIN_ADDRESS}`,
     `VITE_TEST_TOKEN_ADDRESS=${addresses.TEST_TOKEN_ADDRESS}`,
     `VITE_AMM_ADDRESS=${addresses.AMM_ADDRESS}`,

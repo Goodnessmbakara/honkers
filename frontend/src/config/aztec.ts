@@ -5,7 +5,7 @@
 
 // Use the Vite proxy to avoid CORS issues with the Aztec sandbox
 const DEFAULT_PXE_URL = "/rpc";
-const INDEXER_URL = import.meta.env.VITE_INDEXER_API_URL ?? "http://localhost:3001";
+const INDEXER_URL = import.meta.env.VITE_INDEXER_API_URL ?? "";
 
 function getPxeUrl(): string {
   // User override stored in localStorage (Settings page)
