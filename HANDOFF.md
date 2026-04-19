@@ -10,7 +10,9 @@ Last updated: 2026-04-19
 - **Create market** — `MarketFactory.create_market` enforces **bond > 0** and **end date in the future** only; the **whitelist gate is removed** in source (see *What's Done → Contracts*). **Redeploy** with `tests/integration/src/deploy.ts` so sandbox bytecode matches; an older deployment can still revert with "Creator not whitelisted" until replaced.
 - **Faucet** — TestToken mint from the Faucet page works for connected wallets.
 - **Wallet connect** — Account deploy via Sponsored FPC on first connect; auto-reconnect; stale PXE recovery on sandbox restart.
+- **Markets page** — Indexer API queried first via `/api` Vite proxy (no CORS/Codespace issues); falls back to on-chain reads from MarketFactory when indexer returns empty. Contracts registered with browser PXE before simulate calls.
 - **After deploy:** run `npx tsx src/create-market.ts` to seed a market; `/create` in the app uses hashed fields + five `Fr` args (`CreateMarket.tsx`).
+- **Test market (2026-04-19):** "Will Bitcoin (BTC) reach $200,000 USD by December 31, 2026?" — hash `0x00762187ff993c3095a609b997a1894c40eb6d6a70b2c16016ad6f752342f809`
 
 ---
 
@@ -27,7 +29,7 @@ Last updated: 2026-04-19
 ### Frontend Infrastructure
 - **In-browser PXE** via `@aztec/pxe/client/bundle` (WASM + IndexedDB `pxe/aztec-pxe-honkers`)
 - **MinimalWallet** bridge (`BaseWallet` subclass) for `AccountManager`
-- **Vite config** — WASM exclusions, CJS includes, node shims, COOP/COEP headers, `/rpc` proxy
+- **Vite config** — WASM exclusions, CJS includes, node shims, COOP/COEP headers, `/rpc` proxy → Aztec sandbox, `/api` proxy → indexer (both needed in Codespace/Docker where browser can't reach `localhost:3001` directly)
 - **Global wallet context** — `WalletProvider` in `contexts/WalletContext.tsx` centralizes wallet state (connected, address, syncing, connect/disconnect). All components share a single source of truth via `useWalletContext()`. The old `useWallet()` hook is a thin re-export for backward compatibility.
 - **Protected routes** — `ProtectedRoute` component gates wallet-required pages (portfolio, winnings, faucet, create, backup, admin) at the routing level. Shows a "Wallet required" prompt with connect button instead of per-page inline guards.
 - **Account contract deployment fixed** — The Schnorr account contract is now always deployed on-chain during connect. Previous bug: `pxe.getContractInstance()` returned locally-registered (not on-chain deployed) contracts, so deployment was always skipped.
@@ -36,7 +38,7 @@ Last updated: 2026-04-19
 - **Sandbox restart detection** — `useAztecWallet` tracks the L1 rollup address; automatically nukes stale IndexedDB + clears wallet credentials when the sandbox rolls to a new rollup address
 - **Reset PXE button** — enumerates all IndexedDB databases matching `aztec` or `pxe` and deletes them all
 - **Export backup** — dumps all Aztec/PXE IndexedDB databases + `honkers:*` localStorage keys to a JSON download
-- **On-chain market fallback** — `useMarkets` tries the indexer API first; on failure falls back to reading `MarketFactory.get_next_market_id()` + `get_market_info(id)` directly via simulate calls. Null-guarded against stale contract addresses. Indexer list responses use `{ markets }`; the hook also accepts `data` for compatibility.
+- **On-chain market fallback** — `useMarkets` tries the indexer API first; on failure or empty result falls back to reading `MarketFactory.get_next_market_id()` + `get_market_info(id)` directly via simulate calls. The MarketFactory (and AMM) contract instances are **registered with the browser PXE** before simulate is called — the Aztec v4.1.3 PXE requires `registerContract()` to run `ensureContractSynced` before executing utility functions; omitting it causes a cryptic `Cannot read properties of undefined (reading 'toString')` in the PXE error handler. Null-guarded against stale contract addresses. Indexer list responses use `{ markets }`; the hook also accepts `data` for compatibility.
 - **Trade flow** — `useTrade` runs `deposit_collateral` then `buy_shares` with five arguments. AMM `get_price_yes` / `get_price_no` (simulate) supplies `price_per_share`; `maxSlippage` is basis points applied to minimum `shares_out`. Two transactions (two proof cycles). **Proof UI** shows **(1/2) Deposit** vs **(2/2) Buy shares** in `ProofProgress`.
 - **Market detail & charts (indexer + chain)** — `useMarketDetail` / `useMarketPrices` hit the indexer first; on **404** or **fetch error** they fall back to **AMM** + **MarketFactory** simulates (`get_market_info`, `get_price_yes` / `get_price_no`, `get_reserves`) when the wallet is connected. API bodies are **normalized** (indexer camelCase, optional `{ data }` wrapper). `Trade` distinguishes loading vs missing market.
 - **Portfolio** — `usePXE.getPrivateNotes` uses `pxe.debug.getNotes` (PrivateVault slots 8=collateral, 9=shares, 10=winnings). `claim_winnings` passes `fee_recipient` from `VITE_FEE_RECIPIENT_ADDRESS` or falls back to `get_admin()`.
@@ -51,7 +53,8 @@ Last updated: 2026-04-19
 - Hashes question/criteria/source (SHA-256, truncated to 31 bytes for field) → `MarketFactory.create_market()` → `Oracle.register_market()` (no whitelist step)
 - `tests/integration/src/whitelist.ts` — optional; calls `add_to_whitelist` if you still want to record flags on-chain (not required for creation)
 - `tests/integration/src/redeploy-factory.ts` — helper when only MarketFactory bytecode changes (use full `deploy.ts` for greenfield)
-- Successfully created test market: "Will Bola Ahmed Tinubu win the 2027 Nigerian Presidential Election?" (hash `0x00a22e5706261089c02407859a5b71b7ff4d95c89d0da2479cfa89d1fc9895be`)
+- **Successfully created test market**: "Will Bitcoin (BTC) reach $200,000 USD by December 31, 2026?" (hash `0x00762187ff993c3095a609b997a1894c40eb6d6a70b2c16016ad6f752342f809`, resolution source: Coinbase Pro BTC/USD spot price). Previous test market (Tinubu election) has been replaced.
+- **`create-market.ts` question updated** — reflects the Bitcoin market above; `KNOWN_QUESTIONS` in `useMarkets.ts` updated with the matching hash for readable display in the Markets page.
 
 ### Deployment
 - Contracts deploy successfully to sandbox via `npx tsx src/deploy.ts`
@@ -83,6 +86,13 @@ Last updated: 2026-04-19
 ### Open
 
 - **B5 — Second error on retry (IndexedDB)**: "Failed to execute 'get' on 'IDBObjectStore': The transaction has finished" — IndexedDB transaction lifetime issue in PXE's kv-store. May surface after stale DB nuke during PXE init. Needs investigation.
+
+### Fixed (2026-04-19)
+
+- **B6 — Markets page ERR_CONNECTION_REFUSED (indexer)**: Browser in Codespace/Docker environment cannot reach `localhost:3001` directly. Fixed by adding a `/api` Vite proxy (same pattern as `/rpc` for the sandbox). `VITE_INDEXER_API_URL` is now left empty in `frontend/.env`; all `/api/*` calls route through the Vite dev server proxy. `docker-compose.yml` passes `INDEXER_URL=http://indexer:3001` to the frontend container so the proxy target resolves within Docker networking. `deploy.ts` updated to write `VITE_INDEXER_API_URL=` (empty) instead of `http://localhost:3001`.
+- **B7 — simulate() crashes with `Cannot read properties of undefined (reading 'toString')`**: Root cause: the Aztec v4.1.3 PXE's `executeUtility` runs `ensureContractSynced` before every simulate call, which requires the contract to be registered via `pxe.registerContract()`. Unregistered contracts caused an internal error; the PXE error handler then crashed trying to stringify undefined args. Fixed in `fetchFromChain` and `fetchMarketDetailFromChain` in `useMarkets.ts`: now checks `pxe.getContractInstance(addr)`, fetches the deployed instance from `aztecNode.getContract(addr)`, and calls `pxe.registerContract({ instance, artifact })` if not already registered, before any simulate call.
+- **B8 — `fieldLikeToBigInt` not applied to simulate tuple fields**: `fetchFromChain` was casting raw simulate return values directly to `bigint` without using the `fieldLikeToBigInt` helper. Different Aztec SDK codegen versions return `Fr`, `bigint`, or plain objects. Fixed to use `fieldLikeToBigInt(raw[n])` + `unwrapSimulate()` on all tuple fields, matching the pattern already used in `fetchMarketDetailFromChain`.
+- **B9 — `create-market.ts` used outdated market question**: Updated to "Will Bitcoin (BTC) reach $200,000 USD by December 31, 2026?" with Coinbase Pro as resolution source; `KNOWN_QUESTIONS` in `useMarkets.ts` updated to match new hash.
 
 ### Fixed (2026-04-17)
 
@@ -192,20 +202,20 @@ cd indexer && pnpm install && cd ..
 ### Running the stack (Docker — recommended for all environments)
 
 ```bash
-# 1. Start all services (ethereum, sandbox, postgres, indexer, keeper, frontend)
+# ── 1. Start all services (ethereum, sandbox, postgres, indexer, keeper, frontend)
 docker compose up -d
 
-# 2. Wait for sandbox to be healthy (~60s), then deploy contracts
+# ── 2. Wait for sandbox to be healthy (~60s), then deploy contracts
 #    Watch progress: docker compose logs -f sandbox
 cd tests/integration && npx tsx src/deploy.ts && cd ../..
 
-# 3. Seed a test market
+# ── 3. Seed a test market
 cd tests/integration && npx tsx src/create-market.ts && cd ../..
 
-# 4. Rebuild frontend with the new contract addresses written to frontend/.env
+# ── 4. Rebuild frontend with the new contract addresses written to frontend/.env
 docker compose up -d --build frontend
 
-# 5. Open in browser
+# ── 5. Open in browser
 #    Local PC:   http://localhost:5173
 #    GitHub Codespace: use the forwarded port URL shown in VS Code "Ports" panel
 #
@@ -214,9 +224,7 @@ docker compose up -d --build frontend
 #    - Markets page shows the Bitcoin market via on-chain fallback
 ```
 
-> **Note for Codespace users only:** The browser cannot reach `localhost:8080` or
-> `localhost:3001` directly. The Vite dev server already proxies both via `/rpc`
-> and `/api`. On a local PC with Docker Desktop, `localhost` works fine.
+> **Note for Codespace users only:** The browser can't reach `localhost:8080` or `localhost:3001` directly — the Vite dev server proxies both via `/rpc` and `/api` respectively. This is already wired. On a local PC `localhost` works fine with Docker Desktop port forwarding.
 
 ### Every time the sandbox restarts (volumes removed or `docker compose down -v`)
 
@@ -228,7 +236,7 @@ cd tests/integration && npx tsx src/create-market.ts && cd ../..
 docker compose up -d --build frontend
 ```
 
-Then **clear browser site data** for `localhost:5173` (or open incognito) to flush the stale PXE IndexedDB.
+Then clear browser site data (or open incognito) to flush the stale PXE IndexedDB.
 
 ### Running without Docker (local PC only)
 
@@ -236,8 +244,10 @@ Then **clear browser site data** for `localhost:5173` (or open incognito) to flu
 # Terminal 1 — Aztec sandbox
 npx @aztec/aztec@0.84.0 start --sandbox
 
-# Terminal 2 — PostgreSQL
-docker run -d --name honkers-pg -e POSTGRES_USER=honkers   -e POSTGRES_PASSWORD=honkers -e POSTGRES_DB=honkers   -p 5432:5432 postgres:16-alpine
+# Terminal 2 — PostgreSQL (or use a local install)
+docker run -d --name honkers-pg -e POSTGRES_USER=honkers \
+  -e POSTGRES_PASSWORD=honkers -e POSTGRES_DB=honkers \
+  -p 5432:5432 postgres:16-alpine
 
 # Terminal 3 — Deploy contracts + seed market
 cd tests/integration
@@ -247,7 +257,9 @@ cd ../..
 
 # Terminal 4 — Indexer
 cd indexer
-DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" AZTEC_RPC_URL="http://localhost:8080" npx tsx src/db/migrate.ts
+DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" \
+AZTEC_RPC_URL="http://localhost:8080" \
+npx tsx src/db/migrate.ts
 DATABASE_URL="postgresql://honkers:honkers@localhost:5432/honkers" pnpm dev
 cd ..
 
@@ -260,17 +272,16 @@ cd frontend && pnpm dev
 
 | Symptom | Fix |
 |---------|-----|
-| `MarketFactory not found on-chain` | Sandbox restarted — run deploy + create-market + rebuild frontend (steps 2–4) |
+| `MarketFactory not found on-chain` | Sandbox restarted; run deploy + create-market + rebuild frontend |
 | `block hash not found` / blank Markets | Clear browser site data for `localhost:5173` or open incognito |
-| Markets page empty (wallet connected) | Contract addresses in `frontend/.env` are stale — rebuild frontend after deploy |
-| `ERR_CONNECTION_REFUSED` to `localhost:3001` | Only in Codespace — `/api` Vite proxy handles this (already wired) |
-| `Cannot read properties of undefined (toString)` | Fixed in `useMarkets.ts` — pull latest and rebuild frontend |
+| Markets page empty (wallet connected) | Confirm contract addresses in `frontend/.env` match deployed addresses |
+| `ERR_CONNECTION_REFUSED` to `localhost:3001` | Only in Codespace — ensure `/api` Vite proxy is wired (already done) |
+| `You must call pxe.registerContract` | Fixed in `useMarkets.ts` — pull latest and rebuild frontend |
 | Docker build fails on first run | Run `pnpm install` in `frontend/` and `tests/integration/` first |
-
 
 ### Environment
 - **Aztec**: v4.1.3 sandbox on port 8080
-- **Vite**: dev server on port 5173, proxies `/rpc` → `localhost:8080`
+- **Vite**: dev server on port 5173, proxies `/rpc` → sandbox (`AZTEC_SANDBOX_URL` or `localhost:8080`), proxies `/api` → indexer (`INDEXER_URL` or `localhost:3001`)
 - **PostgreSQL**: `honkers-postgres` Docker container on port 5432
 - **Indexer**: port 3001 (`INDEXER_PORT`). Optional env: `MARKET_FACTORY_ADDRESS`, `AMM_ADDRESS`, `ORACLE_ADDRESS`, `TEST_TOKEN_ADDRESS`, `AZTEC_RPC_URL` (default `http://localhost:8080`)
 - **Frontend**: optional `VITE_FEE_RECIPIENT_ADDRESS` for `claim_winnings` (else vault `get_admin()` via simulate)
@@ -291,6 +302,8 @@ cd frontend && pnpm dev
 8. **Global wallet context** — `WalletProvider` centralizes auth state; `ProtectedRoute` gates pages at the routing level instead of inline guards in each page
 9. **Indexer map slots** — `poseidon2([base_slot, market_id])` matches Aztec public map layout; base slots taken from codegen `ContractStorageLayout`
 10. **Open market creation** — Bond + schedule checks on-chain; no creator whitelist (see contracts section above)
+11. **Vite dual proxy** — `/rpc` for Aztec sandbox RPC (CORS + Codespace), `/api` for indexer REST API (same reason). Both targets are configurable via `AZTEC_SANDBOX_URL` and `INDEXER_URL` env vars on the frontend container. `VITE_INDEXER_API_URL` left empty in `frontend/.env` so all indexer calls go through the proxy.
+12. **PXE contract pre-registration** — Before calling `simulate()` on any contract, check `pxe.getContractInstance()` and call `pxe.registerContract()` if missing. Aztec v4.1.3 PXE requires this for `ensureContractSynced` to work; omitting it causes an opaque crash in the PXE error handler.
 
 ---
 
