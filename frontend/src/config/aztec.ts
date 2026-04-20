@@ -3,9 +3,33 @@
 // Default platform proxy (non-logging) + user override option (EI-3)
 // ---------------------------------------------------------------------------
 
-// Use the Vite proxy to avoid CORS issues with the Aztec sandbox
+// Use same-origin paths by default so CloudFront/ALB deployments do not depend
+// on local-machine hostnames.
 const DEFAULT_PXE_URL = "/rpc";
-const INDEXER_URL = import.meta.env.VITE_INDEXER_API_URL ?? "";
+const DEFAULT_INDEXER_URL = "";
+
+function getIndexerUrl(): string {
+  const raw = import.meta.env.VITE_INDEXER_API_URL?.trim();
+  if (!raw) return DEFAULT_INDEXER_URL;
+
+  // In production, an accidental localhost value would route requests to the
+  // user's own machine (and fail with CORS/network errors). Fall back to
+  // same-origin so `/api` continues to work behind reverse proxies/CDNs.
+  if (typeof window !== "undefined") {
+    try {
+      const parsed = new URL(raw, window.location.origin);
+      const isLocalTarget = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+      const isLocalPage =
+        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+      if (isLocalTarget && !isLocalPage) return DEFAULT_INDEXER_URL;
+    } catch {
+      // Invalid URL override: ignore and use same-origin fallback.
+      return DEFAULT_INDEXER_URL;
+    }
+  }
+
+  return raw;
+}
 
 function getPxeUrl(): string {
   // User override stored in localStorage (Settings page)
@@ -18,7 +42,9 @@ export const aztecConfig = {
   get pxeUrl() {
     return getPxeUrl();
   },
-  indexerUrl: INDEXER_URL,
+  get indexerUrl() {
+    return getIndexerUrl();
+  },
 
   contracts: {
     privateVault: import.meta.env.VITE_PRIVATE_VAULT_ADDRESS ?? "",
