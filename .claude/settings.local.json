@@ -47,7 +47,18 @@
       "Bash(node -e:*)",
       "Bash(git pull:*)",
       "Bash(git stash:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(npx tsc:*)",
+      "Bash(npx tsx:*)",
+      "mcp__tavily__tavily-search",
+      "Bash(echo:*)",
+      "Bash(docker cp:*)",
+      "Bash(for f in /Users/abba/Desktop/aztec/tests/integration/src/artifacts/*.ts)",
+      "Bash(do sed -i '' \"s|from ''''../contracts-target3/|from ''''../../../../contracts/target/|g\" \"$f\" done echo \"Fixed import paths\" head -12 /Users/abba/Desktop/aztec/tests/integration/src/artifacts/AMM.ts)",
+      "Bash(npm run:*)",
+      "Bash(npx aztec:*)",
+      "Bash(AZTEC_JS=\"/Users/abba/Desktop/aztec/tests/integration/node_modules/.pnpm/@aztec+aztec@4.1.3_@aztec+noir-test-contracts.js@4.1.3_typescript@5.7.3__@emnapi+core@1_f82872f70a22293afd5f9ddb609fbf73/node_modules/@aztec/aztec/dest/bin/index.js\" node:*)",
+      "Bash(ps:*)"
     ]
   }
 }

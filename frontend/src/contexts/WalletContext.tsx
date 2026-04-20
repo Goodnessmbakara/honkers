@@ -23,10 +23,12 @@ const SECRET_KEY = "honkers:wallet-secret";
 /** Detect stale PXE errors that require IndexedDB reset */
 function isStaleNoteError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
   return (
-    msg.includes("Failed to get a note") ||
-    msg.includes("Block hash not found") ||
-    msg.includes("self.is_some()")
+    lower.includes("failed to get a note") ||
+    // Newer Aztec errors include the missing hash value between "block hash" and "not found".
+    (lower.includes("block hash") && lower.includes("not found while querying world state")) ||
+    lower.includes("self.is_some()")
   );
 }
 
