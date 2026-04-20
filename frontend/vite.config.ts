@@ -159,6 +159,8 @@ export default defineConfig({
     },
   },
   server: {
+    // Allow ALB/CloudFront host headers in production deployments.
+    allowedHosts: true,
     headers: {
       // Required for SharedArrayBuffer (Barretenberg WASM multi-threading)
       // MUST be same-origin + credentialless for crossOriginIsolated === true

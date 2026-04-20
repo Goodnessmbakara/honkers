@@ -1,0 +1,66 @@
+name: Deploy To EC2
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: deploy-main-ec2
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      EC2_HOST: ${{ secrets.EC2_HOST }}
+      EC2_USER: ${{ secrets.EC2_USER }}
+      EC2_PORT: ${{ secrets.EC2_PORT }}
+      EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          test -n "${EC2_HOST}"
+          test -n "${EC2_USER}"
+          test -n "${{ secrets.EC2_SSH_KEY }}"
+
+      - name: Configure SSH key
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${EC2_PORT:-22}" -H "${EC2_HOST}" >> ~/.ssh/known_hosts
+
+      - name: Set deploy defaults
+        run: |
+          set -euo pipefail
+          echo "PORT=${EC2_PORT:-22}" >> "$GITHUB_ENV"
+          echo "APP_DIR=${EC2_APP_DIR:-/home/ubuntu/app}" >> "$GITHUB_ENV"
+
+      - name: Sync repository to EC2
+        run: |
+          set -euo pipefail
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/deploy_key -p ${PORT}" \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude "**/node_modules" \
+            --exclude ".pnpm-store" \
+            ./ "${EC2_USER}@${EC2_HOST}:${APP_DIR}/"
+
+      - name: Deploy docker stack on EC2
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "${PORT}" "${EC2_USER}@${EC2_HOST}" <<EOF
+          set -euo pipefail
+          cd "${APP_DIR}"
+          sudo docker compose up -d --build
+          sudo docker compose ps
+          curl -I --max-time 20 http://localhost:5173
+          EOF
