@@ -165,20 +165,18 @@ export default defineConfig({
       // Required for SharedArrayBuffer (Barretenberg WASM multi-threading)
       // MUST be same-origin + credentialless for crossOriginIsolated === true
       'Cross-Origin-Opener-Policy': 'same-origin',
-      'Cross-Origin-Embedder-Policy': 'credentialless',
+      'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Resource-Policy': 'cross-origin',
     },
     proxy: {
       // Proxy Aztec sandbox RPC to avoid CORS issues
       '/rpc': {
-        target: process.env.AZTEC_SANDBOX_URL || 'http://localhost:8080',
+        target: process.env.AZTEC_SANDBOX_URL || 'https://rpc.testnet.aztec-labs.com',
         changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/rpc/, ''),
-      },
-      // Proxy indexer API — browser can't reach localhost:3001 in Codespace
-      '/api': {
-        target: process.env.INDEXER_URL || 'http://localhost:3001',
-        changeOrigin: true,
+        rewrite: (p) => {
+          const rewritten = p.replace(/^\/rpc/, '');
+          return rewritten.length === 0 ? '/' : rewritten;
+        },
       },
     },
     fs: {

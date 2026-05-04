@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Keeper bot configuration — loaded from environment variables.
-// Defaults are safe for local Aztec Sandbox development.
+// Defaults target Aztec testnet.
 // ---------------------------------------------------------------------------
 
 function requireEnv(key: string, fallback?: string): string {
@@ -13,7 +13,7 @@ function requireEnv(key: string, fallback?: string): string {
 
 export const config = {
   /** Aztec JSON-RPC endpoint. */
-  aztecRpcUrl: requireEnv("AZTEC_RPC_URL", "http://localhost:8080"),
+  aztecRpcUrl: requireEnv("AZTEC_RPC_URL", "https://rpc.testnet.aztec-labs.com"),
 
   /** PostgreSQL connection (reads indexer DB for market list). */
   databaseUrl: requireEnv(
@@ -21,8 +21,8 @@ export const config = {
     "postgresql://honkers:honkers@localhost:5432/honkers",
   ),
 
-  /** Master polling interval in ms (default 5 minutes). */
-  pollIntervalMs: Number(requireEnv("KEEPER_POLL_INTERVAL_MS", "300000")),
+  /** Master polling interval in ms (default 10 minutes). */
+  pollIntervalMs: Number(requireEnv("KEEPER_POLL_INTERVAL_MS", "600000")),
 
   /** Health check interval in ms (default 1 minute). */
   healthIntervalMs: Number(requireEnv("KEEPER_HEALTH_INTERVAL_MS", "60000")),
@@ -35,6 +35,13 @@ export const config = {
 
   /** Admin private key for signing keeper transactions. */
   adminPrivateKey: requireEnv("ADMIN_PRIVATE_KEY", ""),
+
+  /**
+   * auto_void: attempt on-chain void when admin key configured (not yet implemented — logs only).
+   * alert_only: notify via alerts (default).
+   * disabled: skip auto-void job work entirely.
+   */
+  autoVoidMode: (process.env.KEEPER_AUTO_VOID_MODE ?? "alert_only").toLowerCase(),
 
   /** Slack webhook URL for alerts (optional). */
   slackWebhookUrl: requireEnv("SLACK_WEBHOOK_URL", ""),

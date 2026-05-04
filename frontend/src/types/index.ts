@@ -86,6 +86,24 @@ export interface WalletState {
   syncing: boolean;
 }
 
+export type WalletConnectStage =
+  | "idle"
+  | "detecting_env"
+  | "loading_secret"
+  | "creating_account"
+  | "registering_account"
+  | "checking_deployment"
+  | "deploying_account"
+  | "finalizing"
+  | "connected"
+  | "failed";
+
+export interface WalletConnectTimelineEntry {
+  at: string;
+  stage: WalletConnectStage;
+  detail: string | null;
+}
+
 // ── Toast ───────────────────────────────────────────────────────────────────
 
 export type ToastType = "success" | "error" | "warning" | "info";
@@ -106,14 +124,17 @@ export type ProofStep =
   | "witness"
   | "proving"
   | "submitting"
+  | "confirming"
   | "confirmed"
   | "failed"
   | "deposit_witness"
   | "deposit_proving"
   | "deposit_submitting"
+  | "deposit_confirming"
   | "buy_witness"
   | "buy_proving"
-  | "buy_submitting";
+  | "buy_submitting"
+  | "buy_confirming";
 
 export interface TradeParams {
   marketId: number;

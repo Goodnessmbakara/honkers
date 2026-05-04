@@ -28,6 +28,8 @@ export function useTrade() {
   const [step, setStep] = useState<ProofStep | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [txHash, setTxHash] = useState<string | null>(null);
+  /** Two-step trade: deposit tx then buy tx */
+  const [txHashes, setTxHashes] = useState<[string, string] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const execute = useCallback(
@@ -35,6 +37,7 @@ export function useTrade() {
       setStep(null);
       setElapsed(0);
       setTxHash(null);
+      setTxHashes(null);
       setError(null);
 
       const t0 = Date.now();
@@ -61,12 +64,14 @@ export function useTrade() {
           if (s === "witness") return "deposit_witness";
           if (s === "proving") return "deposit_proving";
           if (s === "submitting") return "deposit_submitting";
+          if (s === "confirming") return "deposit_confirming";
           return s as ProofStep;
         };
         const mapBuy = (s: string): ProofStep => {
           if (s === "witness") return "buy_witness";
           if (s === "proving") return "buy_proving";
           if (s === "submitting") return "buy_submitting";
+          if (s === "confirming") return "buy_confirming";
           return s as ProofStep;
         };
 
@@ -92,7 +97,8 @@ export function useTrade() {
           (s) => setStep(mapBuy(s)),
         );
 
-        setTxHash(`${hashDeposit},${hashBuy}`);
+        setTxHashes([hashDeposit, hashBuy]);
+        setTxHash(null);
         setStep("confirmed");
       } catch (err) {
         setStep("failed");
@@ -113,8 +119,9 @@ export function useTrade() {
     setStep(null);
     setElapsed(0);
     setTxHash(null);
+    setTxHashes(null);
     setError(null);
   }, []);
 
-  return { step, elapsed, txHash, error, execute, cancel, reset };
+  return { step, elapsed, txHash, txHashes, error, execute, cancel, reset };
 }

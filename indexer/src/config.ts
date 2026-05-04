@@ -1,6 +1,6 @@
 // ---------------------------------------------------------------------------
 // Configuration — loaded from environment variables.
-// Defaults are safe for local Aztec Sandbox development.
+// Defaults target Aztec testnet.
 // ---------------------------------------------------------------------------
 
 function requireEnv(key: string, fallback?: string): string {
@@ -19,13 +19,13 @@ export const config = {
   ),
 
   /** Aztec JSON-RPC endpoint. */
-  aztecRpcUrl: requireEnv("AZTEC_RPC_URL", "http://localhost:8080"),
+  aztecRpcUrl: requireEnv("AZTEC_RPC_URL", "https://rpc.testnet.aztec-labs.com"),
 
   /** HTTP server port for the indexer API. */
   port: Number(requireEnv("INDEXER_PORT", "3001")),
 
   /** Polling interval for the event listener (ms). */
-  pollIntervalMs: Number(requireEnv("POLL_INTERVAL_MS", "5000")),
+  pollIntervalMs: Number(requireEnv("POLL_INTERVAL_MS", "30000")),
 
   /** Deployed contract addresses (hex strings). Set after deployment. */
   contracts: {
@@ -37,4 +37,10 @@ export const config = {
 
   /** CORS origin whitelist. Comma-separated. */
   corsOrigins: requireEnv("CORS_ORIGINS", "http://localhost:5173").split(","),
+
+  /**
+   * Bearer token for POST /api/markets/:id/metadata (Authorization: Bearer <token>).
+   * If unset, metadata POST is allowed without auth (dev only).
+   */
+  metadataAdminSecret: process.env.INDEXER_METADATA_SECRET?.trim() ?? "",
 } as const;

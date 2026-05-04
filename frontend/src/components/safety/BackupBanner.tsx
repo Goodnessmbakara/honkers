@@ -6,20 +6,22 @@
 // encourages saving the secret key rather than implying permanent data loss.
 // ---------------------------------------------------------------------------
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { KeyRound, X } from "lucide-react";
 import { Link } from "react-router-dom";
+import { hasStoredWalletSecret } from "../../utils/browserSecretVault";
 
 const DISMISSED_KEY = "honkers:backup-dismissed";
-const SECRET_KEY = "honkers:wallet-secret";
 
 export function BackupBanner() {
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISSED_KEY) === "1",
   );
+  const [hasSecret, setHasSecret] = useState(false);
 
-  // Only show if the user has a wallet secret (i.e. has connected before)
-  const hasSecret = !!localStorage.getItem(SECRET_KEY);
+  useEffect(() => {
+    setHasSecret(hasStoredWalletSecret());
+  }, []);
   if (dismissed || !hasSecret) return null;
 
   const dismiss = () => {

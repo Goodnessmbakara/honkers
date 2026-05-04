@@ -13,6 +13,7 @@
 import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { Fr } from "@aztec/aztec.js/fields";
 import { AccountManager } from "@aztec/aztec.js/wallet";
+import { NO_FROM } from "@aztec/aztec.js/account";
 import { SchnorrAccountContract } from "@aztec/accounts/schnorr";
 import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
 import { deriveSigningKey } from "@aztec/stdlib/keys";
@@ -60,8 +61,6 @@ async function main() {
 
   // BaseWallet bridge for AccountManager (same pattern as MinimalWallet)
   const { BaseWallet } = await import("@aztec/wallet-sdk/base-wallet");
-  const { SignerlessAccount } = await import("@aztec/aztec.js/account");
-  const { AztecAddress } = await import("@aztec/aztec.js/addresses");
 
   class DeployerWallet extends BaseWallet {
     private accounts = new Map<string, any>();
@@ -72,10 +71,15 @@ async function main() {
       this.accounts.set(account.getAddress().toString(), account);
     }
     protected async getAccountFromAddress(address: any) {
-      if (address.equals(AztecAddress.ZERO)) return new SignerlessAccount();
       const acct = this.accounts.get(address.toString());
       if (!acct) throw new Error(`Account not found: ${address}`);
       return acct;
+    }
+    async getAccounts() {
+      return Array.from(this.accounts.values()).map((acc: any) => ({
+        alias: "",
+        item: acc.getAddress(),
+      }));
     }
   }
 
@@ -113,18 +117,18 @@ async function main() {
   const paymentMethod = new SponsoredFeePaymentMethod(sponsoredFPCInstance.address);
   console.log(`  Sponsored FPC @ ${sponsoredFPCInstance.address}`);
 
-  const sendOpts = { from: AztecAddress.ZERO, fee: { paymentMethod } };
+  const sendOpts = { from: NO_FROM, fee: { paymentMethod } };
 
-  // Deploy the admin account contract if needed
+  // Deploy the admin account contract if needed — check on-chain, not local PXE store
   if (await accountManager.hasInitializer()) {
-    const existing = await pxe.getContractInstance(adminAddress);
+    const existing = await aztecNode.getContract(adminAddress);
     if (!existing) {
       console.log("  Deploying admin account contract...");
       const deployMethod = await accountManager.getDeployMethod();
-      await deployMethod.send(sendOpts).wait();
+      await deployMethod.send(sendOpts);
       console.log("  Admin account deployed.");
     } else {
-      console.log("  Admin account already deployed.");
+      console.log("  Admin account already deployed (on-chain).");
     }
   }
 
@@ -137,52 +141,47 @@ async function main() {
   console.log("\n--- Phase 1: Deploying contracts ---\n");
 
   console.log("Deploying TestToken...");
-  const tokenResult = await TestTokenContract.deploy(
+  const token = await TestTokenContract.deploy(
     wallet,
     adminAddress,
     1, // name field (numeric encoding)
     2 // symbol field (numeric encoding)
   ).send(contractSendOpts);
-  const tokenAddress = tokenResult.contract.address;
+  const tokenAddress = token.address;
   console.log(`  TestToken deployed: ${tokenAddress}`);
 
   console.log("Deploying AMM...");
-  const ammResult = await AMMContract.deploy(wallet, adminAddress).send(contractSendOpts);
-  const ammAddress = ammResult.contract.address;
+  const amm = await AMMContract.deploy(wallet, adminAddress).send(contractSendOpts);
+  const ammAddress = amm.address;
   console.log(`  AMM deployed: ${ammAddress}`);
 
   console.log("Deploying Oracle...");
-  const oracleResult = await OracleContract.deploy(
+  const oracle = await OracleContract.deploy(
     wallet,
     adminAddress
   ).send(contractSendOpts);
-  const oracleAddress = oracleResult.contract.address;
+  const oracleAddress = oracle.address;
   console.log(`  Oracle deployed: ${oracleAddress}`);
 
   console.log("Deploying PrivateVault...");
-  const vaultResult = await PrivateVaultContract.deploy(
+  const vault = await PrivateVaultContract.deploy(
     wallet,
     adminAddress,
     feeRecipient
   ).send(contractSendOpts);
-  const vaultAddress = vaultResult.contract.address;
+  const vaultAddress = vault.address;
   console.log(`  PrivateVault deployed: ${vaultAddress}`);
 
   console.log("Deploying MarketFactory...");
-  const factoryResult = await MarketFactoryContract.deploy(
+  const factory = await MarketFactoryContract.deploy(
     wallet,
     adminAddress
   ).send(contractSendOpts);
-  const factoryAddress = factoryResult.contract.address;
+  const factoryAddress = factory.address;
   console.log(`  MarketFactory deployed: ${factoryAddress}`);
 
   // ── Phase 2: Wire dependencies ───────────────────────────────────────
   console.log("\n--- Phase 2: Wiring dependencies ---\n");
-
-  const amm = ammResult.contract;
-  const oracle = oracleResult.contract;
-  const vault = vaultResult.contract;
-  const factory = factoryResult.contract;
 
   console.log("AMM.set_dependencies(vault, oracle)...");
   await amm.methods.set_dependencies(vaultAddress, oracleAddress).send(contractSendOpts);

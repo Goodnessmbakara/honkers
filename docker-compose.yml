@@ -1,42 +1,4 @@
 services:
-  # ── Anvil (L1 Ethereum devnet) ─────────────────────────────────────────────
-  ethereum:
-    image: ghcr.io/foundry-rs/foundry:latest
-    container_name: honkers-ethereum
-    entrypoint: ["anvil", "--host", "0.0.0.0", "--port", "8545"]
-    ports:
-      - "8545:8545"
-    healthcheck:
-      test: ["CMD", "cast", "block-number", "--rpc-url", "http://localhost:8545"]
-      interval: 5s
-      timeout: 3s
-      retries: 20
-      start_period: 5s
-    restart: unless-stopped
-
-  # ── Aztec Local Network (PXE + L2 Node + Sequencer) ────────────────────────
-  sandbox:
-    image: aztecprotocol/aztec:4.1.3
-    container_name: honkers-sandbox
-    ports:
-      - "8080:8080"
-    environment:
-      ETHEREUM_HOSTS: http://ethereum:8545
-      L1_CHAIN_ID: "31337"
-      AZTEC_PORT: "8080"
-      LOG_LEVEL: info
-    command: ["start", "--local-network", "--port", "8080"]
-    depends_on:
-      ethereum:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/status').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\""]
-      interval: 10s
-      timeout: 5s
-      retries: 60
-      start_period: 60s
-    restart: unless-stopped
-
   # ── PostgreSQL ──────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
@@ -66,14 +28,17 @@ services:
       - "3001:3001"
     environment:
       DATABASE_URL: postgresql://honkers:honkers@postgres:5432/honkers
-      AZTEC_RPC_URL: http://sandbox:8080
+      AZTEC_RPC_URL: https://rpc.testnet.aztec-labs.com
       INDEXER_PORT: "3001"
-      POLL_INTERVAL_MS: "5000"
+      POLL_INTERVAL_MS: "30000"
       CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      MARKET_FACTORY_ADDRESS: ${MARKET_FACTORY_ADDRESS:-}
+      AMM_ADDRESS: ${AMM_ADDRESS:-}
+      ORACLE_ADDRESS: ${ORACLE_ADDRESS:-}
+      TEST_TOKEN_ADDRESS: ${TEST_TOKEN_ADDRESS:-}
+      INDEXER_METADATA_SECRET: ${INDEXER_METADATA_SECRET:-}
     depends_on:
       postgres:
-        condition: service_healthy
-      sandbox:
         condition: service_healthy
     restart: unless-stopped
 
@@ -85,13 +50,15 @@ services:
     container_name: honkers-keeper
     environment:
       DATABASE_URL: postgresql://honkers:honkers@postgres:5432/honkers
-      AZTEC_RPC_URL: http://sandbox:8080
-      KEEPER_POLL_INTERVAL_MS: "300000"
+      AZTEC_RPC_URL: https://rpc.testnet.aztec-labs.com
+      KEEPER_POLL_INTERVAL_MS: "600000"
       KEEPER_HEALTH_INTERVAL_MS: "60000"
+      ORACLE_ADDRESS: ${ORACLE_ADDRESS:-}
+      AMM_ADDRESS: ${AMM_ADDRESS:-}
+      ADMIN_PRIVATE_KEY: ${ADMIN_PRIVATE_KEY:-}
+      KEEPER_AUTO_VOID_MODE: ${KEEPER_AUTO_VOID_MODE:-alert_only}
     depends_on:
       postgres:
-        condition: service_healthy
-      sandbox:
         condition: service_healthy
     restart: unless-stopped
 
@@ -104,11 +71,21 @@ services:
     ports:
       - "5173:5173"
     environment:
-      AZTEC_SANDBOX_URL: http://sandbox:8080
+      AZTEC_SANDBOX_URL: https://rpc.testnet.aztec-labs.com
       INDEXER_URL: http://indexer:3001
+      # Contract addresses — sourced from .env at repo root
+      VITE_MARKET_FACTORY_ADDRESS: ${MARKET_FACTORY_ADDRESS:-}
+      VITE_AMM_ADDRESS: ${AMM_ADDRESS:-}
+      VITE_ORACLE_ADDRESS: ${ORACLE_ADDRESS:-}
+      VITE_TEST_TOKEN_ADDRESS: ${TEST_TOKEN_ADDRESS:-}
+      VITE_PRIVATE_VAULT_ADDRESS: ${PRIVATE_VAULT_ADDRESS:-}
+      # Admin + fee config
+      VITE_ADMIN_ADDRESSES: ${VITE_ADMIN_ADDRESSES:-${ADMIN_ADDRESS:-}}
+      VITE_SPONSORED_FPC_ADDRESS: ${SPONSORED_FPC_ADDRESS:-}
+      VITE_FEE_RECIPIENT_ADDRESS: ${ADMIN_ADDRESS:-}
     depends_on:
-      sandbox:
-        condition: service_healthy
+      indexer:
+        condition: service_started
     restart: unless-stopped
 
 volumes:

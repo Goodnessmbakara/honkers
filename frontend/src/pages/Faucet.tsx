@@ -32,7 +32,11 @@ export function Faucet() {
         <button
           className="btn-primary"
           disabled={loading}
-          onClick={() => request(Number(amount))}
+          onClick={() => {
+            void request(Number(amount)).catch(() => {
+              /* error state set inside useFaucet */
+            });
+          }}
         >
           <Droplets size={16} />
           {loading ? "Requesting…" : "Request USDC"}

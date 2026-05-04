@@ -1,51 +1,92 @@
 // ---------------------------------------------------------------------------
-// Aztec RPC configuration
-// Default platform proxy (non-logging) + user override option (EI-3)
+// Aztec environment + RPC configuration
+// Single source of truth for local/testnet/mainnet.
 // ---------------------------------------------------------------------------
 
-// Use same-origin paths by default so CloudFront/ALB deployments do not depend
-// on local-machine hostnames.
-const DEFAULT_PXE_URL = "/rpc";
-const DEFAULT_INDEXER_URL = "";
+export type AztecEnvMode = "local" | "testnet" | "mainnet";
+export type FeeStrategy = "sponsored_fpc" | "fee_juice";
 
-function getIndexerUrl(): string {
-  const raw = import.meta.env.VITE_INDEXER_API_URL?.trim();
-  if (!raw) return DEFAULT_INDEXER_URL;
+const ENV_STORAGE_KEY = "honkers:aztec-env";
+const PXE_OVERRIDE_KEY = "honkers:pxe-url";
+const DEFAULT_ENV: AztecEnvMode = "testnet";
 
-  // In production, an accidental localhost value would route requests to the
-  // user's own machine (and fail with CORS/network errors). Fall back to
-  // same-origin so `/api` continues to work behind reverse proxies/CDNs.
-  if (typeof window !== "undefined") {
-    try {
-      const parsed = new URL(raw, window.location.origin);
-      const isLocalTarget = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
-      const isLocalPage =
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-      if (isLocalTarget && !isLocalPage) return DEFAULT_INDEXER_URL;
-    } catch {
-      // Invalid URL override: ignore and use same-origin fallback.
-      return DEFAULT_INDEXER_URL;
-    }
-  }
-
-  return raw;
+interface AztecEnvironmentConfig {
+  mode: AztecEnvMode;
+  pxeUrl: string;
+  explorerUrl: string;
+  feeStrategy: FeeStrategy;
+  sponsoredFpcAddress?: string;
+  expectedL1ChainId?: number;
+  networkHints: string[];
 }
 
+const ENVIRONMENTS: Record<AztecEnvMode, AztecEnvironmentConfig> = {
+  local: {
+    mode: "local",
+    pxeUrl: "http://localhost:8080",
+    explorerUrl: "",
+    feeStrategy: "sponsored_fpc",
+    sponsoredFpcAddress: "",
+    expectedL1ChainId: 31337,
+    networkHints: ["local", "sandbox", "localhost", "anvil"],
+  },
+  testnet: {
+    mode: "testnet",
+    pxeUrl: "/rpc",
+    explorerUrl: "https://explorer.testnet.aztec.network",
+    feeStrategy: "sponsored_fpc",
+    sponsoredFpcAddress:
+      import.meta.env.VITE_SPONSORED_FPC_ADDRESS ??
+      "0x19b5539ca1b104d4c3705de94e4555c9630def411f025e023a13189d0c56f8f2",
+    expectedL1ChainId: 11155111,
+    networkHints: ["testnet", "sepolia", "alpha-testnet"],
+  },
+  mainnet: {
+    mode: "mainnet",
+    pxeUrl: "/rpc",
+    explorerUrl: "https://explorer.aztec.network",
+    feeStrategy: "fee_juice",
+    sponsoredFpcAddress: "",
+    expectedL1ChainId: 1,
+    networkHints: ["mainnet", "ethereum"],
+  },
+};
+
 function getPxeUrl(): string {
-  // User override stored in localStorage (Settings page)
-  const override = localStorage.getItem("honkers:pxe-url");
-  if (override) return override;
-  return import.meta.env.VITE_AZTEC_RPC_URL ?? DEFAULT_PXE_URL;
+  const override = localStorage.getItem(PXE_OVERRIDE_KEY);
+  if (override) return override.trim();
+  const fromEnv = import.meta.env.VITE_AZTEC_RPC_URL?.trim();
+  return fromEnv || getAztecEnvConfig().pxeUrl;
+}
+
+function resolveEnvMode(): AztecEnvMode {
+  const fromStorage = localStorage.getItem(ENV_STORAGE_KEY)?.trim().toLowerCase();
+  if (fromStorage === "local" || fromStorage === "testnet" || fromStorage === "mainnet") {
+    return fromStorage;
+  }
+
+  const fromBuild = import.meta.env.VITE_AZTEC_ENV?.trim().toLowerCase();
+  if (fromBuild === "local" || fromBuild === "testnet" || fromBuild === "mainnet") {
+    return fromBuild;
+  }
+
+  return DEFAULT_ENV;
+}
+
+export function getAztecEnvConfig(): AztecEnvironmentConfig {
+  return ENVIRONMENTS[resolveEnvMode()];
 }
 
 export const aztecConfig = {
+  get envMode() {
+    return resolveEnvMode();
+  },
+  get env() {
+    return getAztecEnvConfig();
+  },
   get pxeUrl() {
     return getPxeUrl();
   },
-  get indexerUrl() {
-    return getIndexerUrl();
-  },
-
   contracts: {
     privateVault: import.meta.env.VITE_PRIVATE_VAULT_ADDRESS ?? "",
     amm: import.meta.env.VITE_AMM_ADDRESS ?? "",
@@ -60,9 +101,15 @@ export const aztecConfig = {
   /** Update the PXE URL override (persisted to localStorage). */
   setPxeUrl(url: string | null) {
     if (url) {
-      localStorage.setItem("honkers:pxe-url", url);
+      localStorage.setItem(PXE_OVERRIDE_KEY, url);
     } else {
-      localStorage.removeItem("honkers:pxe-url");
+      localStorage.removeItem(PXE_OVERRIDE_KEY);
     }
+  },
+  setEnvMode(mode: AztecEnvMode) {
+    localStorage.setItem(ENV_STORAGE_KEY, mode);
+  },
+  clearEnvMode() {
+    localStorage.removeItem(ENV_STORAGE_KEY);
   },
 } as const;

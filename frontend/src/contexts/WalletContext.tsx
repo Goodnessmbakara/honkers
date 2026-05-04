@@ -1,132 +1,280 @@
 // ---------------------------------------------------------------------------
-// WalletContext — Global wallet state provider
+// WalletContext — Multi-wallet provider using @aztec/wallet-sdk WalletManager.
 //
-// Centralizes wallet connection state so it's computed once and shared across
-// all components via context, instead of each component independently calling
-// useWallet() and deriving its own state.
+// Replaces the embedded in-browser PXE approach with the official Aztec
+// extension-wallet discovery protocol. Any compliant Aztec wallet extension
+// (Azguard, Obsidion, …) is discovered automatically.
+//
+// Connection flow:
+//   1. User clicks "Connect Wallet" → openPicker()
+//   2. WalletManager broadcasts discovery message → extensions respond
+//   3. User picks a wallet from the modal → connectToProvider(provider)
+//   4. ECDH key exchange → encrypted channel → wallet.getAccounts()[0]
+//   5. wallet satisfies the full Aztec.js Wallet interface
 // ---------------------------------------------------------------------------
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import type { WalletState } from "../types";
-import { useAztecWallet, resetPXEState } from "../hooks/useAztecWallet";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import type { Wallet } from "@aztec/aztec.js/wallet";
+import type { AztecNode } from "@aztec/aztec.js/node";
+import { WalletManager, type WalletProvider } from "@aztec/wallet-sdk/manager";
 import { Fr } from "@aztec/aztec.js/fields";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { AccountManager } from "@aztec/aztec.js/wallet";
-import { SchnorrAccountContract } from "@aztec/accounts/schnorr";
-import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
-import { deriveSigningKey } from "@aztec/stdlib/keys";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
+import { aztecConfig } from "../config/aztec";
+import type { WalletConnectStage, WalletConnectTimelineEntry, WalletState } from "../types";
+import { getOrCreateEmbeddedPXE, resetEmbeddedPXEState } from "../utils/embeddedPXE";
+import { loadDecryptedSecretHex, persistEncryptedSecret } from "../utils/browserSecretVault";
+import { AzguardWallet, asWallet } from "../utils/azguardWallet";
 
-const STORAGE_KEY = "honkers:wallet-address";
-const SECRET_KEY = "honkers:wallet-secret";
+// ---------------------------------------------------------------------------
+// Lazy singleton Aztec node (thin JSON-RPC client, no PXE)
+// ---------------------------------------------------------------------------
+let _aztecNode: AztecNode | null = null;
 
-/** Detect stale PXE errors that require IndexedDB reset */
-function isStaleNoteError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err);
-  const lower = msg.toLowerCase();
-  return (
-    lower.includes("failed to get a note") ||
-    // Newer Aztec errors include the missing hash value between "block hash" and "not found".
-    (lower.includes("block hash") && lower.includes("not found while querying world state")) ||
-    lower.includes("self.is_some()")
-  );
+async function getAztecNode(): Promise<AztecNode> {
+  if (_aztecNode) return _aztecNode;
+  const { createAztecNodeClient } = await import("@aztec/aztec.js/node");
+  _aztecNode = createAztecNodeClient(aztecConfig.pxeUrl);
+  return _aztecNode;
 }
 
+// ---------------------------------------------------------------------------
+// Wallet manager singleton
+// ---------------------------------------------------------------------------
+const walletManager = WalletManager.configure({ extensions: { enabled: true } });
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+const STORAGE_KEY = "honkers:wallet-address";
+const CONNECT_TIMELINE_KEY = "honkers:connect-timeline";
+const CONNECT_TIMELINE_LIMIT = 40;
+
+// ---------------------------------------------------------------------------
+// Context shape
+// ---------------------------------------------------------------------------
 interface WalletContextValue extends WalletState {
+  wallet: Wallet | null;
+  aztecNode: AztecNode | null;
+  walletError: string | null;
+  connectStage: WalletConnectStage;
+  connectDetail: string | null;
+  connectTimeline: WalletConnectTimelineEntry[];
+  clearConnectTimeline: () => void;
+
+  // Picker
+  pickerOpen: boolean;
+  openPicker: () => void;
+  closePicker: () => void;
+  discoveredProviders: WalletProvider[];
+  discoverStatus: "idle" | "discovering" | "done";
+  connectToProvider: (provider: WalletProvider) => Promise<void>;
+  connectWithEmbeddedPXE: () => Promise<void>;
+
+  // Legacy compat
   connect: () => Promise<void>;
   disconnect: () => void;
   walletLoading: boolean;
-  walletError: string | null;
 }
 
 const WalletCtx = createContext<WalletContextValue>({
   connected: false,
   address: null,
   syncing: false,
+  wallet: null,
+  aztecNode: null,
+  walletError: null,
+  connectStage: "idle",
+  connectDetail: null,
+  connectTimeline: [],
+  clearConnectTimeline: () => {},
+  pickerOpen: false,
+  openPicker: () => {},
+  closePicker: () => {},
+  discoveredProviders: [],
+  discoverStatus: "idle",
+  connectToProvider: async () => {},
+  connectWithEmbeddedPXE: async () => {},
   connect: async () => {},
   disconnect: () => {},
   walletLoading: false,
-  walletError: null,
 });
 
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const { pxeInstance, loading: walletLoading, error: walletError } = useAztecWallet();
   const [state, setState] = useState<WalletState>({
     connected: false,
     address: null,
     syncing: false,
   });
+  const [wallet, setWallet] = useState<Wallet | null>(null);
+  const [aztecNode, setAztecNode] = useState<AztecNode | null>(null);
+  const [walletError, setWalletError] = useState<string | null>(null);
 
-  const connectingRef = useRef(false);
+  // Picker
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [discoveredProviders, setDiscoveredProviders] = useState<WalletProvider[]>([]);
+  const [discoverStatus, setDiscoverStatus] = useState<"idle" | "discovering" | "done">("idle");
+  const discoveryRef = useRef<{ cancel: () => void } | null>(null);
+  const activeProviderRef = useRef<WalletProvider | null>(null);
 
-  const connect = useCallback(async () => {
-    if (!pxeInstance) {
-      console.error("[WalletProvider] Cannot connect: PXE not initialized.");
-      return;
+  // Timeline
+  const [connectStage, setConnectStage] = useState<WalletConnectStage>("idle");
+  const [connectDetail, setConnectDetail] = useState<string | null>(null);
+  const [connectTimeline, setConnectTimeline] = useState<WalletConnectTimelineEntry[]>(() => {
+    try {
+      const raw = localStorage.getItem(CONNECT_TIMELINE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw) as WalletConnectTimelineEntry[];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
+
+  const pushTimeline = useCallback((stage: WalletConnectStage, detail: string | null) => {
+    const entry: WalletConnectTimelineEntry = { at: new Date().toISOString(), stage, detail };
+    setConnectTimeline((prev) => {
+      const next = [...prev, entry].slice(-CONNECT_TIMELINE_LIMIT);
+      localStorage.setItem(CONNECT_TIMELINE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
+  const setStatus = useCallback(
+    (stage: WalletConnectStage, detail: string | null) => {
+      setConnectStage(stage);
+      setConnectDetail(detail);
+      pushTimeline(stage, detail);
+    },
+    [pushTimeline],
+  );
+
+  // ---------------------------------------------------------------------------
+  // Discovery — start when picker opens, cancel when it closes
+  // ---------------------------------------------------------------------------
+  const startDiscovery = useCallback(async () => {
+    setDiscoveredProviders([]);
+    setDiscoverStatus("discovering");
+
+    let chainInfo;
+    try {
+      const node = await getAztecNode();
+      const nodeInfo = await node.getNodeInfo();
+      chainInfo = {
+        chainId: new Fr(BigInt(nodeInfo.l1ChainId)),
+        version: new Fr(BigInt(nodeInfo.rollupVersion)),
+      };
+    } catch {
+      // Fall back to env-based chain info if node unreachable
+      const envChainId = aztecConfig.envMode === "testnet" ? 11155111 : 31337;
+      chainInfo = { chainId: new Fr(BigInt(envChainId)), version: new Fr(1n) };
     }
 
-    const { wallet: minimalWallet } = pxeInstance;
+    const session = walletManager.getAvailableWallets({
+      chainInfo,
+      appId: "honkers-dapp",
+      timeout: 20_000, // 20 seconds — enough for user to switch to extension
+      onWalletDiscovered: (provider) => {
+        setDiscoveredProviders((prev) =>
+          prev.some((p) => p.id === provider.id) ? prev : [...prev, provider]
+        );
+      },
+    });
+
+    discoveryRef.current = session;
+
+    session.done.then(() => {
+      setDiscoverStatus("done");
+      discoveryRef.current = null;
+    });
+  }, []);
+
+  const openPicker = useCallback(() => {
+    setPickerOpen(true);
+    setWalletError(null);
+    startDiscovery();
+  }, [startDiscovery]);
+
+  const closePicker = useCallback(() => {
+    setPickerOpen(false);
+    discoveryRef.current?.cancel();
+    discoveryRef.current = null;
+    setDiscoverStatus("idle");
+    setDiscoveredProviders([]);
+  }, []);
+
+  // Close picker automatically when wallet connects
+  useEffect(() => {
+    if (state.connected) {
+      setPickerOpen(false);
+      setDiscoverStatus("idle");
+      discoveryRef.current?.cancel();
+      discoveryRef.current = null;
+    }
+  }, [state.connected]);
+
+  // ---------------------------------------------------------------------------
+  // Connect via embedded in-browser PXE (no extension required)
+  // ---------------------------------------------------------------------------
+  const connectWithEmbeddedPXE = useCallback(async () => {
     setState((s) => ({ ...s, syncing: true }));
+    setStatus("creating_account", "Starting in-browser PXE…");
+    setWalletError(null);
 
     try {
-      let secret: Fr;
-      const savedSecret = localStorage.getItem(SECRET_KEY);
-      if (savedSecret) {
-        secret = Fr.fromHexString(savedSecret);
+      const { wallet: minimalWallet, aztecNode: node } = await getOrCreateEmbeddedPXE(aztecConfig.pxeUrl);
+
+      setStatus("registering_account", "Setting up account…");
+
+      const { Fr: FrCls } = await import("@aztec/aztec.js/fields");
+      const { AccountManager } = await import("@aztec/aztec.js/wallet");
+      const { SchnorrAccountContract } = await import("@aztec/accounts/schnorr");
+      const { deriveSigningKey } = await import("@aztec/stdlib/keys");
+
+      let secretHex = await loadDecryptedSecretHex();
+      let secret: typeof FrCls.prototype;
+      if (secretHex) {
+        secret = FrCls.fromHexString(secretHex);
       } else {
-        secret = Fr.random();
-        localStorage.setItem(SECRET_KEY, secret.toString());
+        secret = FrCls.random();
+        secretHex = secret.toString();
+        await persistEncryptedSecret(secretHex);
       }
 
       const signingKey = deriveSigningKey(secret);
       const accountContract = new SchnorrAccountContract(signingKey);
-      const salt = Fr.ZERO;
-
-      const accountManager = await AccountManager.create(
-        minimalWallet,
-        secret,
-        accountContract,
-        salt,
-      );
-
+      const accountManager = await AccountManager.create(minimalWallet, secret, accountContract, FrCls.ZERO);
       const account = await accountManager.getAccount();
       const instance = accountManager.getInstance();
       const artifact = await accountManager.getAccountContract().getContractArtifact();
 
-      console.log(`[WalletProvider] Registering account ${account.getAddress()}...`);
-      await minimalWallet.registerContract(instance, artifact, accountManager.getSecretKey());
+      await (minimalWallet as unknown as { registerContract: (...a: unknown[]) => Promise<void> }).registerContract(
+        instance, artifact, accountManager.getSecretKey()
+      );
       minimalWallet.addAccount(account);
 
       if (await accountManager.hasInitializer()) {
+        setStatus("checking_deployment", "Deploying account contract…");
         try {
-          console.log("[WalletProvider] Deploying account contract...");
-
-          // Set up Sponsored FPC — pays fees unconditionally on sandbox/devnet.
-          // The SponsoredFPC is a canonical contract deployed at a deterministic
-          // address derived from its artifact + salt=0.
           const { SponsoredFPCContractArtifact } = await import("@aztec/noir-contracts.js/SponsoredFPC");
-          const sponsoredFPCInstance = await getContractInstanceFromInstantiationParams(
-            SponsoredFPCContractArtifact,
-            { salt: Fr.ZERO },
-          );
-          await minimalWallet.registerContract(sponsoredFPCInstance, SponsoredFPCContractArtifact);
-          const paymentMethod = new SponsoredFeePaymentMethod(sponsoredFPCInstance.address);
-          console.log(`[WalletProvider] Sponsored FPC registered @ ${sponsoredFPCInstance.address}`);
-
+          const { getContractInstanceFromInstantiationParams } = await import("@aztec/stdlib/contract");
+          const { SponsoredFeePaymentMethod } = await import("@aztec/aztec.js/fee");
+          const fpcInstance = await getContractInstanceFromInstantiationParams(SponsoredFPCContractArtifact, { salt: FrCls.ZERO });
+          await (minimalWallet as unknown as { registerContract: (...a: unknown[]) => Promise<void> }).registerContract(fpcInstance, SponsoredFPCContractArtifact);
+          const paymentMethod = new SponsoredFeePaymentMethod(fpcInstance.address);
           const deployMethod = await accountManager.getDeployMethod();
-          // Use AztecAddress.ZERO (self-deployment mode) so the constructor runs
-          // BEFORE the entrypoint, and pass the Sponsored FPC as fee payer so the
-          // new account doesn't need pre-existing Fee Juice balance.
-          await deployMethod.send({
-            from: AztecAddress.ZERO,
-            fee: { paymentMethod },
-          });
-          console.log("[WalletProvider] Account contract deployed.");
-        } catch (deployErr: unknown) {
+          await deployMethod.send({ from: (await import("@aztec/aztec.js/addresses")).AztecAddress.ZERO, fee: { paymentMethod } });
+          console.log("[WalletContext] Account contract deployed.");
+        } catch (deployErr) {
           const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
-          if (msg.includes("already deployed") || msg.includes("DUPLICATE_NULLIFIER") || msg.includes("Existing nullifier") || msg.includes("exists")) {
-            console.log("[WalletProvider] Account contract already deployed, skipping.");
-          } else {
+          if (!msg.includes("already deployed") && !msg.includes("DUPLICATE_NULLIFIER") && !msg.includes("exists")) {
             throw deployErr;
           }
         }
@@ -134,56 +282,151 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       const address = account.getAddress().toString();
       localStorage.setItem(STORAGE_KEY, address);
+      setAztecNode(node);
+      setWallet(minimalWallet as unknown as Wallet);
+      setStatus("connected", "Connected via Browser PXE");
       setState({ connected: true, address, syncing: false });
-      console.log(`[WalletProvider] Connected: ${address}`);
+      console.log(`[WalletContext] Browser PXE connected: ${address}`);
     } catch (err) {
-      // Auto-recover from stale IndexedDB errors: clear data and reload ONCE.
-      // Use a sessionStorage flag to prevent infinite reload loops.
-      if (isStaleNoteError(err) && !sessionStorage.getItem("honkers:recovery-attempted")) {
-        console.warn("[WalletProvider] Stale PXE data detected. Clearing IndexedDB and reloading...");
-        sessionStorage.setItem("honkers:recovery-attempted", "1");
-        await resetPXEState();
+      const msg = err instanceof Error ? err.message : String(err);
+      // Auto-recover from stale IndexedDB on first attempt
+      const isStale = msg.toLowerCase().includes("block hash") && msg.toLowerCase().includes("not found");
+      if (isStale && !sessionStorage.getItem("honkers:pxe-recovery")) {
+        sessionStorage.setItem("honkers:pxe-recovery", "1");
+        await resetEmbeddedPXEState();
         setState({ connected: false, address: null, syncing: false });
-        window.location.reload();
-        return;
+        return connectWithEmbeddedPXE();
       }
-      // Clear recovery flag on non-stale errors or after retry
-      sessionStorage.removeItem("honkers:recovery-attempted");
-      console.error("[WalletProvider] connect failed:", err);
+      sessionStorage.removeItem("honkers:pxe-recovery");
+      console.error("[WalletContext] Browser PXE connect failed:", err);
+      setStatus("failed", msg);
+      setWalletError(msg);
       setState({ connected: false, address: null, syncing: false });
+      throw err;
     }
-  }, [pxeInstance]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setStatus]);
 
+  // ---------------------------------------------------------------------------
+  // Connect to a specific provider
+  // ---------------------------------------------------------------------------
+  const connectToProvider = useCallback(
+    async (provider: WalletProvider) => {
+      setState((s) => ({ ...s, syncing: true }));
+      setStatus("creating_account", `Connecting to ${provider.name}…`);
+      setWalletError(null);
+
+      try {
+        let connectedWallet: Wallet;
+
+        if (provider.name.toLowerCase().includes("azguard")) {
+          // Azguard requires its own native permission flow — wallet-sdk ECDH
+          // sessions carry no method-level permissions that Azguard's background
+          // page requires. Use the inline AzguardWallet adapter instead.
+          setStatus("registering_account", "Requesting Azguard permissions…");
+          const azguardWallet = await AzguardWallet.connect("Honkers", "testnet");
+          connectedWallet = asWallet(azguardWallet);
+
+          azguardWallet.onDisconnected.addHandler(() => {
+            console.warn("[WalletContext] Azguard disconnected.");
+            disconnect();
+          });
+        } else {
+          // Standard wallet-sdk ECDH channel (Obsidion, any RFC-compliant wallet)
+          setStatus("registering_account", "Key exchange with wallet…");
+          const pending = await provider.establishSecureChannel("honkers-dapp");
+          setStatus("checking_deployment", "Finalizing secure channel…");
+          connectedWallet = await pending.confirm();
+
+          provider.onDisconnect(() => {
+            console.warn("[WalletContext] Wallet disconnected unexpectedly.");
+            disconnect();
+          });
+        }
+
+        setStatus("connected", `Connected via ${provider.name}`);
+        const accounts = await connectedWallet.getAccounts();
+        if (accounts.length === 0) {
+          throw new Error(`${provider.name} returned no accounts. Create an account in the wallet first.`);
+        }
+
+        // getAccounts() returns Aliased<AztecAddress>[] — address is on .item
+        const firstAccount = accounts[0];
+        const address =
+          firstAccount && typeof firstAccount === "object" && "item" in firstAccount
+            ? String((firstAccount as { item: { toString(): string } }).item)
+            : String(firstAccount);
+
+        localStorage.setItem(STORAGE_KEY, address);
+        const node = await getAztecNode();
+        setAztecNode(node);
+        setWallet(connectedWallet);
+        activeProviderRef.current = provider;
+
+        setState({ connected: true, address, syncing: false });
+        console.log(`[WalletContext] Connected: ${address} via ${provider.name}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[WalletContext] connect failed:", err);
+        setStatus("failed", msg);
+        setWalletError(msg);
+        setState({ connected: false, address: null, syncing: false });
+        throw err;
+      }
+    },
+    [setStatus], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // ---------------------------------------------------------------------------
+  // Disconnect
+  // ---------------------------------------------------------------------------
   const disconnect = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    activeProviderRef.current?.disconnect().catch(() => {});
+    activeProviderRef.current = null;
+    setWallet(null);
+    setAztecNode(null);
     setState({ connected: false, address: null, syncing: false });
+    setConnectStage("idle");
+    setConnectDetail(null);
+    setWalletError(null);
   }, []);
 
-  // Auto-reconnect on PXE ready
-  useEffect(() => {
-    const savedSecret = localStorage.getItem(SECRET_KEY);
-    const savedAddress = localStorage.getItem(STORAGE_KEY);
-    if (savedSecret && savedAddress && pxeInstance && !connectingRef.current) {
-      connectingRef.current = true;
-      setState((s) => (s.address === savedAddress ? s : { connected: true, address: savedAddress, syncing: true }));
-      connect()
-        .catch((err) => {
-          console.error("[WalletProvider] Auto-reconnect failed:", err);
-          localStorage.removeItem(STORAGE_KEY);
-          localStorage.removeItem(SECRET_KEY);
-          setState({ connected: false, address: null, syncing: false });
-        })
-        .finally(() => { connectingRef.current = false; });
-    } else if (savedAddress && !pxeInstance) {
-      // PXE not ready yet — show as syncing, not connected.
-      // Setting connected: true here causes components to call wallet methods
-      // before the account is registered in MinimalWallet.
-      setState((s) => (s.address === savedAddress && s.syncing ? s : { connected: false, address: savedAddress, syncing: true }));
-    }
-  }, [pxeInstance]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ---------------------------------------------------------------------------
+  // Legacy compat: connect() opens picker
+  // ---------------------------------------------------------------------------
+  const connect = useCallback(async () => {
+    openPicker();
+  }, [openPicker]);
+
+  const clearConnectTimeline = useCallback(() => {
+    localStorage.removeItem(CONNECT_TIMELINE_KEY);
+    setConnectTimeline([]);
+  }, []);
 
   return (
-    <WalletCtx.Provider value={{ ...state, connect, disconnect, walletLoading, walletError }}>
+    <WalletCtx.Provider
+      value={{
+        ...state,
+        wallet,
+        aztecNode,
+        walletError,
+        connectStage,
+        connectDetail,
+        connectTimeline,
+        clearConnectTimeline,
+        pickerOpen,
+        openPicker,
+        closePicker,
+        discoveredProviders,
+        discoverStatus,
+        connectToProvider,
+        connectWithEmbeddedPXE,
+        connect,
+        disconnect,
+        walletLoading: false,
+      }}
+    >
       {children}
     </WalletCtx.Provider>
   );

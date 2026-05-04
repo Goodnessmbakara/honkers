@@ -21,7 +21,7 @@ export function Trade() {
   const { market, loading, error: marketError } = useMarketDetail(marketId);
   const { connected, address } = useWallet();
   const { balance } = usePortfolio(address);
-  const { step, elapsed, txHash, error, execute, cancel, reset } = useTrade();
+  const { step, elapsed, txHash, txHashes, error, execute, cancel, reset } = useTrade();
 
   if (loading) {
     return (
@@ -71,6 +71,14 @@ export function Trade() {
           <TxStatus
             status={step === "confirmed" ? "confirmed" : "failed"}
             txHash={txHash}
+            txHashes={
+              txHashes
+                ? [
+                    { label: "Deposit", hash: txHashes[0] },
+                    { label: "Buy shares", hash: txHashes[1] },
+                  ]
+                : undefined
+            }
             error={error}
             onRetry={reset}
           />

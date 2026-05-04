@@ -8,11 +8,13 @@ import { useNavigate } from "react-router-dom";
 import { useMarkets } from "../hooks/useMarkets";
 import { AdminMarketTable } from "../components/admin/AdminMarketTable";
 import { Shield } from "lucide-react";
+import { getAdminAddresses } from "../utils/adminAuth";
 
 export function AdminHome() {
   const { markets, loading } = useMarkets();
   const navigate = useNavigate();
   const [_filter] = useState("all");
+  const adminConfigured = getAdminAddresses().length > 0;
 
   return (
     <div className="page">
@@ -20,6 +22,22 @@ export function AdminHome() {
         <Shield size={20} style={{ color: "var(--accent)" }} />
         <h1>Admin</h1>
       </div>
+
+      {!adminConfigured ? (
+        <p
+          style={{
+            fontSize: "0.875rem",
+            color: "var(--warning)",
+            marginBottom: "var(--space-4)",
+            padding: "var(--space-3)",
+            border: "1px solid var(--border)",
+            borderRadius: 8,
+          }}
+        >
+          Set <code className="mono">VITE_ADMIN_ADDRESSES</code> (comma-separated Aztec addresses) in{" "}
+          <code className="mono">frontend/.env</code> so only designated wallets can open admin routes in production.
+        </p>
+      ) : null}
 
       {/* Stats row */}
       <div

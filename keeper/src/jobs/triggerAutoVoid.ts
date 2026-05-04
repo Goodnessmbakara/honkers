@@ -21,6 +21,10 @@ import { alertInfo, alertCritical } from "../utils/alerts";
  * For each, attempts to submit an `Oracle.void_market(market_id)` transaction.
  */
 export async function triggerAutoVoid(pool: Pool): Promise<void> {
+  if (config.autoVoidMode === "disabled") {
+    return;
+  }
+
   const now = Math.floor(Date.now() / 1000);
   const voidCutoff = now - config.gracePeriodSecs;
 

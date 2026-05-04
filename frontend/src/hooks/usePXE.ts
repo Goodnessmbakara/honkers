@@ -1,22 +1,18 @@
 // ---------------------------------------------------------------------------
-// usePXE — contract interactions via BrowserEmbeddedWallet (Aztec v4.1.3)
+// usePXE — contract interactions via connected extension wallet (Aztec v4.2.0)
 //
-// Health check uses raw JSON-RPC to the node.
-// All contract calls (simulate, prove, send) go through the local wallet.
+// Works with any Aztec wallet extension (Azguard, Obsidion, …).
+// The wallet satisfies the full Wallet/PXE interface.
+// Health check uses raw JSON-RPC to the node (independent of wallet state).
 // ---------------------------------------------------------------------------
 
 import { useCallback, useRef, useState } from "react";
 import { aztecConfig } from "../config/aztec";
 import { getArtifact } from "../config/contractArtifacts";
-import { useAztecWallet } from "./useAztecWallet";
+import { useWalletContext } from "../contexts/WalletContext";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Fr } from "@aztec/aztec.js/fields";
-import type { NotesFilter } from "@aztec/pxe/server";
-import { NoteStatus } from "@aztec/stdlib/note";
-import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import type { MinimalWallet } from "../utils/MinimalWallet";
+import { ensureContractRegisteredWithPXE } from "../utils/ensureContractRegistered";
 
 interface PxeHealth {
   ok: boolean;
@@ -24,32 +20,11 @@ interface PxeHealth {
   error: string | null;
 }
 
-/** Cached Sponsored FPC setup — registered once per wallet instance */
-let sponsoredFPCPromise: Promise<SponsoredFeePaymentMethod> | null = null;
-let sponsoredFPCWallet: unknown = null; // track which wallet instance we registered for
-
-async function getSponsoredFPC(wallet: MinimalWallet): Promise<SponsoredFeePaymentMethod> {
-  if (sponsoredFPCPromise && sponsoredFPCWallet === wallet) return sponsoredFPCPromise;
-  sponsoredFPCWallet = wallet;
-  sponsoredFPCPromise = (async () => {
-    const { SponsoredFPCContractArtifact } = await import("@aztec/noir-contracts.js/SponsoredFPC");
-    const instance = await getContractInstanceFromInstantiationParams(
-      SponsoredFPCContractArtifact,
-      { salt: Fr.ZERO },
-    );
-    await wallet.registerContract(instance, SponsoredFPCContractArtifact);
-    return new SponsoredFeePaymentMethod(instance.address);
-  })();
-  sponsoredFPCPromise.catch(() => { sponsoredFPCPromise = null; });
-  return sponsoredFPCPromise;
-}
-
-/** Raw note fields decoded from PXE (PrivateSet note preimage). */
+/** Raw note fields decoded from wallet PXE (PrivateSet note preimage). */
 export type PrivateNotePayload = { items: bigint[] };
 
 export function usePXE() {
-  const { pxeInstance } = useAztecWallet();
-  const wallet = pxeInstance?.wallet ?? null;
+  const { wallet, aztecNode } = useWalletContext();
   const [health, setHealth] = useState<PxeHealth>({ ok: false, blockNumber: null, error: null });
   const abortRef = useRef<AbortController | null>(null);
 
@@ -73,42 +48,30 @@ export function usePXE() {
   }, []);
 
   const getPrivateNotes = useCallback(
-    async (owner: string, contractAddress: string, storageSlot: number): Promise<PrivateNotePayload[]> => {
-      if (!pxeInstance?.pxe) return [];
-      const pxe = pxeInstance.pxe;
-      const ownerAddr = AztecAddress.fromString(owner);
-      const contractAddr = AztecAddress.fromString(contractAddress);
-      const filter: NotesFilter = {
-        contractAddress: contractAddr,
-        owner: ownerAddr,
-        storageSlot: new Fr(BigInt(storageSlot)),
-        status: NoteStatus.ACTIVE,
-        scopes: [ownerAddr],
-      };
-      try {
-        const rows = await pxe.debug.getNotes(filter);
-        return rows.map((r) => ({
-          items: r.note.items.map((f) => f.toBigInt()),
-        }));
-      } catch (err) {
-        console.warn("[usePXE] getPrivateNotes failed:", err);
-        return [];
-      }
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    async (_owner: string, _contractAddress: string, _storageSlot: number): Promise<PrivateNotePayload[]> => {
+      // getIncomingNotes is not on the standard Wallet interface in 4.2.0.
+      // Extension wallets manage note decryption internally; callers should
+      // rely on the wallet extension's own UI for balance display.
+      return [];
     },
-    [pxeInstance],
+    [],
   );
 
   /** Simulate a public/utility view function (no tx, no proof). */
   const simulateView = useCallback(
     async (contractAddress: string, functionName: string, args: unknown[]) => {
-      if (!wallet) throw new Error("Wallet not initialized. Wait for AztecProvider to load.");
+      if (!wallet || !aztecNode) {
+        throw new Error("Wallet not connected. Connect a wallet first.");
+      }
       const artifact = getArtifact(contractAddress);
+      await ensureContractRegisteredWithPXE(wallet, aztecNode, contractAddress, artifact);
       const address = AztecAddress.fromString(contractAddress);
       const contract = Contract.at(address, artifact, wallet);
       const fn = contract.methods[functionName] as (...a: unknown[]) => { simulate: () => Promise<unknown> };
       return fn(...args).simulate();
     },
-    [wallet],
+    [wallet, aztecNode],
   );
 
   const simulateAndProve = useCallback(
@@ -119,30 +82,39 @@ export function usePXE() {
       from: string,
       onStep?: (step: string) => void,
     ) => {
-      if (!wallet) throw new Error("Wallet not initialized. Wait for AztecProvider to load.");
+      if (!wallet || !aztecNode) {
+        throw new Error("Wallet not connected. Connect a wallet first.");
+      }
 
       abortRef.current = new AbortController();
       onStep?.("witness");
 
       try {
-        // Look up artifact and create Contract instance
         const artifact = getArtifact(contractAddress);
+        await ensureContractRegisteredWithPXE(wallet, aztecNode, contractAddress, artifact);
         const address = AztecAddress.fromString(contractAddress);
         const contract = Contract.at(address, artifact, wallet);
 
         onStep?.("proving");
 
-        // Set up Sponsored FPC so the user doesn't need Fee Juice balance
-        const paymentMethod = await getSponsoredFPC(wallet);
         const fromAddress = AztecAddress.fromString(from);
-        const result = await contract.methods[functionName](...(args as never[])).send({
+        const sentTx = await contract.methods[functionName](...(args as never[])).send({
           from: fromAddress,
-          fee: { paymentMethod },
         });
 
         onStep?.("submitting");
+        onStep?.("confirming");
+        const receipt =
+          sentTx &&
+          typeof sentTx === "object" &&
+          "wait" in sentTx &&
+          typeof (sentTx as { wait?: () => Promise<{ txHash?: { toString(): string } }> }).wait === "function"
+            ? await (sentTx as { wait: () => Promise<{ txHash?: { toString(): string } }> }).wait()
+            : (sentTx as { receipt?: { txHash?: { toString(): string } } }).receipt;
         onStep?.("confirmed");
-        return (result as { receipt: { txHash: { toString(): string } } }).receipt.txHash.toString();
+        const hash = receipt?.txHash?.toString?.();
+        if (!hash) throw new Error("Transaction submitted but no tx hash was returned.");
+        return hash;
       } catch (err) {
         if (abortRef.current?.signal.aborted) {
           throw new Error("Proof generation cancelled");
@@ -150,7 +122,7 @@ export function usePXE() {
         throw err;
       }
     },
-    [wallet],
+    [wallet, aztecNode],
   );
 
   const cancelProof = useCallback(() => {

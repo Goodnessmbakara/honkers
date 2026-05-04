@@ -1,0 +1,2 @@
+- When a user asks for a standalone setup repo, do not place it inside the current project; create it as its own Desktop repo.
+- When the user asks for deep research (or invokes deep research skill), run the deep research agent workflow first instead of ad-hoc manual MCP/tool probing.

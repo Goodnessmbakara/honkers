@@ -20,8 +20,8 @@ export function NetworkError() {
     >
       <h1 style={{ marginBottom: "var(--space-4)" }}>Network error</h1>
       <p style={{ color: "var(--text-secondary)", maxWidth: 480, marginBottom: "var(--space-6)" }}>
-        Unable to connect to the Aztec PXE. Check that your local sandbox is
-        running or update the PXE URL in settings.
+        Unable to connect to Aztec testnet RPC. Check your internet connection
+        or update the RPC URL in settings.
       </p>
       <div style={{ display: "flex", gap: "var(--space-3)" }}>
         <button className="btn-primary" onClick={() => window.location.reload()}>

@@ -18,7 +18,7 @@ export function CreateMarket() {
   const [endDate, setEndDate] = useState("");
   const [bond, setBond] = useState("10");
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   /** Hash a UTF-8 string into a field element using SHA-256 truncated to 31 bytes */
@@ -39,7 +39,7 @@ export function CreateMarket() {
     if (!address) return;
     setLoading(true);
     setError(null);
-    setResult(null);
+    setTxHash(null);
 
     try {
       const [questionHash, criteriaHash, sourceHash] = await Promise.all([
@@ -62,7 +62,7 @@ export function CreateMarket() {
         ],
         address,
       );
-      setResult(`Market created. TX: ${txHash}`);
+      setTxHash(txHash as string);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -152,7 +152,19 @@ export function CreateMarket() {
       </form>
 
       {error && <p style={{ color: "var(--negative)", marginTop: "var(--space-4)", fontSize: "0.875rem" }}>{error}</p>}
-      {result && <p style={{ color: "var(--positive)", marginTop: "var(--space-4)", fontSize: "0.875rem" }}>{result}</p>}
+      {txHash && (
+        <p style={{ color: "var(--positive)", marginTop: "var(--space-4)", fontSize: "0.875rem" }}>
+          Market created. TX:{" "}
+          <a
+            href={`https://testnet.aztecscan.xyz/tx/${txHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: "var(--positive)", textDecoration: "underline", wordBreak: "break-all" }}
+          >
+            {txHash}
+          </a>
+        </p>
+      )}
 
       <div style={{ marginTop: "var(--space-6)" }}>
         <PrivacyCallout context="general" />

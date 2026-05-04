@@ -10,11 +10,18 @@ type Status = "pending" | "confirmed" | "failed";
 interface Props {
   status: Status;
   txHash?: string | null;
+  /** Multiple tx hashes (e.g. deposit + buy) with optional labels */
+  txHashes?: { label: string; hash: string }[];
   error?: string | null;
   onRetry?: () => void;
 }
 
-export function TxStatus({ status, txHash, error, onRetry }: Props) {
+function shorten(h: string) {
+  if (h.length <= 18) return h;
+  return `${h.slice(0, 10)}…${h.slice(-8)}`;
+}
+
+export function TxStatus({ status, txHash, txHashes, error, onRetry }: Props) {
   return (
     <div
       className="card"
@@ -35,11 +42,20 @@ export function TxStatus({ status, txHash, error, onRetry }: Props) {
           {status === "confirmed" && "Transaction confirmed"}
           {status === "failed" && "Transaction failed"}
         </div>
-        {txHash && (
+        {txHashes && txHashes.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", marginTop: "var(--space-1)" }}>
+            {txHashes.map((t) => (
+              <span key={t.label} className="mono" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+                {t.label}: {shorten(t.hash)}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {txHash && !txHashes?.length ? (
           <span className="mono" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-            {txHash.slice(0, 10)}…{txHash.slice(-8)}
+            {shorten(txHash)}
           </span>
-        )}
+        ) : null}
         {error && (
           <span style={{ fontSize: "0.8125rem", color: "var(--negative)" }}>{error}</span>
         )}

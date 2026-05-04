@@ -7,6 +7,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -18,6 +19,11 @@ import {
   type ConnectOptions,
 } from "../core";
 import { Fr } from "@aztec/aztec.js/fields";
+import {
+  loadDecryptedSecretHex,
+  migrateLegacyPlaintextIfPresent,
+  persistEncryptedSecret,
+} from "../utils/browserSecretVault";
 
 // ── Context ─────────────────────────────────────────────────────────────────
 
@@ -112,7 +118,6 @@ interface AccountState {
 }
 
 const ADDR_KEY = "aztec-connect:address";
-const SECRET_KEY = "aztec-connect:secret";
 
 /**
  * Manage Schnorr account connection lifecycle.
@@ -137,6 +142,15 @@ export function useAccount(opts?: ConnectOptions) {
     syncing: false,
   });
 
+  const optsRef = useRef(opts);
+  useEffect(() => {
+    optsRef.current = opts;
+  });
+
+  useEffect(() => {
+    migrateLegacyPlaintextIfPresent().catch(() => {});
+  }, []);
+
   // Restore previous session (view-only until connect() re-registers)
   useEffect(() => {
     const saved = localStorage.getItem(ADDR_KEY);
@@ -151,17 +165,16 @@ export function useAccount(opts?: ConnectOptions) {
     setState((s) => ({ ...s, syncing: true }));
 
     try {
-      // Get or generate secret
       let secret: Fr;
-      const saved = localStorage.getItem(SECRET_KEY);
-      if (saved) {
-        secret = Fr.fromHexString(saved);
+      const savedHex = await loadDecryptedSecretHex();
+      if (savedHex) {
+        secret = Fr.fromHexString(savedHex);
       } else {
         secret = Fr.random();
-        localStorage.setItem(SECRET_KEY, secret.toString());
+        await persistEncryptedSecret(secret.toString());
       }
 
-      const result = await connectAccount(instance, secret, opts);
+      const result = await connectAccount(instance, secret, optsRef.current ?? {});
 
       localStorage.setItem(ADDR_KEY, result.address);
       setState({ connected: true, address: result.address, syncing: false });
@@ -170,7 +183,7 @@ export function useAccount(opts?: ConnectOptions) {
       setState({ connected: false, address: null, syncing: false });
       throw err;
     }
-  }, [instance, opts]);
+  }, [instance]);
 
   const disconnect = useCallback(() => {
     localStorage.removeItem(ADDR_KEY);

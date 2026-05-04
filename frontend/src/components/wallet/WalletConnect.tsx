@@ -1,15 +1,24 @@
 // ---------------------------------------------------------------------------
-// CMP-WALLET-CONNECT — Connect/disconnect Aztec wallet, show address + sync
+// WalletConnect — Connect/disconnect button. Opens the WalletPickerModal.
 // ---------------------------------------------------------------------------
 
-import { Wallet, LogOut, WifiOff, RotateCcw, Copy, Check, Shield, Download, ChevronDown } from "lucide-react";
+import { Wallet, LogOut, Copy, Check, Shield, Download, ChevronDown } from "lucide-react";
 import { useWalletContext } from "../../contexts/WalletContext";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 export function WalletConnect() {
-  const { connected, address, syncing, connect, disconnect, walletLoading, walletError } = useWalletContext();
-  const [resetting, setResetting] = useState(false);
+  const {
+    connected,
+    address,
+    syncing,
+    openPicker,
+    disconnect,
+    walletError,
+    connectStage,
+    connectDetail,
+  } = useWalletContext();
+
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -34,33 +43,6 @@ export function WalletConnect() {
     setTimeout(() => setCopied(false), 2000);
   }, [address]);
 
-  const resetPXE = useCallback(async () => {
-    if (!confirm("This clears cached PXE data and reloads the page. Continue?")) return;
-    setResetting(true);
-    setMenuOpen(false);
-    try {
-      const dbs = await indexedDB.databases();
-      const toDelete = dbs.filter((db) => db.name?.includes("aztec") || db.name?.startsWith("pxe"));
-      await Promise.all(
-        toDelete.map(
-          (db) =>
-            new Promise<void>((resolve) => {
-              const req = indexedDB.deleteDatabase(db.name!);
-              req.onsuccess = () => resolve();
-              req.onerror = () => resolve();
-              req.onblocked = () => resolve();
-            }),
-        ),
-      );
-      localStorage.removeItem("honkers:wallet-address");
-      localStorage.removeItem("honkers:wallet-secret");
-      window.location.reload();
-    } catch (err) {
-      console.error("[WalletConnect] Reset failed:", err);
-      setResetting(false);
-    }
-  }, []);
-
   const handleDisconnect = useCallback(() => {
     setMenuOpen(false);
     disconnect();
@@ -71,11 +53,11 @@ export function WalletConnect() {
     navigate(path);
   }, [navigate]);
 
+  // Connected state — pill + dropdown menu
   if (connected && address) {
     const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
     return (
       <div ref={menuRef} style={{ position: "relative" }}>
-        {/* Wallet pill button */}
         <button
           onClick={() => setMenuOpen((v) => !v)}
           style={{
@@ -111,7 +93,6 @@ export function WalletConnect() {
           />
         </button>
 
-        {/* Dropdown menu */}
         {menuOpen && (
           <div
             style={{
@@ -178,13 +159,6 @@ export function WalletConnect() {
                 label="Faucet"
                 onClick={() => handleNavigate("/faucet")}
               />
-              <MenuItem
-                icon={<RotateCcw size={14} />}
-                label="Reset PXE data"
-                onClick={resetPXE}
-                disabled={resetting}
-                muted
-              />
               <div style={{ height: 1, background: "var(--border)", margin: "var(--space-1) var(--space-2)" }} />
               <MenuItem
                 icon={<LogOut size={14} />}
@@ -199,31 +173,44 @@ export function WalletConnect() {
     );
   }
 
-  if (walletError) {
+  // Error state
+  if (walletError && !syncing) {
     return (
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <button className="btn-secondary" disabled title={walletError} style={{ opacity: 0.6 }}>
-          <WifiOff size={16} />
-          PXE offline
-        </button>
-        <button
-          className="btn-ghost"
-          onClick={resetPXE}
-          disabled={resetting}
-          title="Reset PXE"
-          style={{ opacity: 0.6 }}
-        >
-          <RotateCcw size={14} />
-        </button>
-      </div>
+      <button
+        className="btn-secondary"
+        onClick={openPicker}
+        title={walletError}
+        style={{ opacity: 0.8 }}
+      >
+        <Wallet size={16} />
+        Retry connect
+      </button>
     );
   }
 
+  // Connecting / idle state
   return (
-    <button className="btn-primary" onClick={connect} disabled={syncing || walletLoading}>
-      <Wallet size={16} />
-      {walletLoading ? "Initializing…" : syncing ? "Connecting…" : "Connect wallet"}
-    </button>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "var(--space-1)" }}>
+      <button
+        className="btn-primary"
+        onClick={openPicker}
+        disabled={syncing}
+      >
+        <Wallet size={16} />
+        {syncing ? "Connecting…" : "Connect wallet"}
+      </button>
+
+      {syncing && connectStage !== "idle" && (
+        <div style={{
+          maxWidth: 280,
+          fontSize: "0.6875rem",
+          color: connectStage === "failed" ? "var(--negative)" : "var(--text-muted)",
+          textAlign: "right",
+        }}>
+          {`${connectStage}${connectDetail ? ` — ${connectDetail}` : ""}`}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -233,14 +220,12 @@ function MenuItem({
   onClick,
   disabled,
   destructive,
-  muted,
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled?: boolean;
   destructive?: boolean;
-  muted?: boolean;
 }) {
   return (
     <button
@@ -256,7 +241,7 @@ function MenuItem({
         border: "none",
         borderRadius: "var(--radius-md)",
         cursor: disabled ? "not-allowed" : "pointer",
-        color: destructive ? "var(--negative)" : muted ? "var(--text-muted)" : "var(--text-secondary)",
+        color: destructive ? "var(--negative)" : "var(--text-secondary)",
         fontSize: "0.8125rem",
         opacity: disabled ? 0.5 : 1,
         transition: "background 150ms ease",

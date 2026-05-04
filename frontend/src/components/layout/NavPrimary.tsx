@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 import { NavLink } from "react-router-dom";
-import { LayoutGrid, Briefcase, PlusCircle, Droplets, Settings } from "lucide-react";
+import { LayoutGrid, Briefcase, PlusCircle, Droplets, Settings, Sparkles } from "lucide-react";
 import { WalletConnect } from "../wallet/WalletConnect";
 
 const linkStyle = ({ isActive }: { isActive: boolean }): React.CSSProperties => ({
@@ -56,6 +56,9 @@ export function NavPrimary() {
 
         {/* Navigation */}
         <nav style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+          <NavLink to="/onboarding" style={linkStyle}>
+            <Sparkles size={16} /> Setup
+          </NavLink>
           <NavLink to="/markets" style={linkStyle}>
             <LayoutGrid size={16} /> Markets
           </NavLink>

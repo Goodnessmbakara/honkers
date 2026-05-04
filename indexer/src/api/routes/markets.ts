@@ -10,6 +10,7 @@
 import { Router, Request, Response } from "express";
 import { query, queryOne, execute } from "../../db/client.js";
 import type { MarketListItem, MarketDetail } from "../../types/index.js";
+import { config } from "../../config.js";
 
 export const marketsRouter = Router();
 
@@ -178,6 +179,15 @@ marketsRouter.get("/:marketId/prices", async (req: Request, res: Response) => {
  */
 marketsRouter.post("/:marketId/metadata", async (req: Request, res: Response) => {
   try {
+    if (config.metadataAdminSecret) {
+      const auth = req.headers.authorization ?? "";
+      const expected = `Bearer ${config.metadataAdminSecret}`;
+      if (auth !== expected) {
+        res.status(401).json({ error: "Unauthorized" });
+        return;
+      }
+    }
+
     const { marketId } = req.params;
     const { question, criteria, sourceUrl } = req.body;
 

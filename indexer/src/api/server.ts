@@ -21,7 +21,7 @@ export function createServer(): express.Express {
   app.use(
     cors({
       origin: config.corsOrigins,
-      methods: ["GET"],
+      methods: ["GET", "POST", "OPTIONS"],
     }),
   );
 

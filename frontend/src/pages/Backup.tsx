@@ -6,18 +6,20 @@
 // export is a convenience for faster restore (avoids full chain re-sync).
 // ---------------------------------------------------------------------------
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Copy, Check, Download, Upload, KeyRound, Database, ShieldAlert, Info } from "lucide-react";
-
-const SECRET_KEY = "honkers:wallet-secret";
+import { readWalletSecretHexForBackup } from "../utils/browserSecretVault";
 
 export function Backup() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [secret, setSecret] = useState<string | null>(null);
 
-  const secret = localStorage.getItem(SECRET_KEY);
+  useEffect(() => {
+    readWalletSecretHexForBackup().then(setSecret).catch(() => setSecret(null));
+  }, []);
 
   const copySecret = useCallback(async () => {
     if (!secret) return;

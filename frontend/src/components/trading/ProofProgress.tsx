@@ -10,14 +10,17 @@ const stepLabels: Record<ProofStep, string> = {
   witness: "Generating witness…",
   proving: "Computing proof…",
   submitting: "Submitting transaction…",
+  confirming: "Waiting for testnet confirmation (~36s+ block time)…",
   confirmed: "Transaction confirmed",
   failed: "Proof generation failed",
   deposit_witness: "(1/2) Deposit — generating witness…",
   deposit_proving: "(1/2) Deposit — computing proof…",
   deposit_submitting: "(1/2) Deposit — submitting…",
+  deposit_confirming: "(1/2) Deposit — waiting for testnet confirmation (~36s+)…",
   buy_witness: "(2/2) Buy shares — generating witness…",
   buy_proving: "(2/2) Buy shares — computing proof…",
   buy_submitting: "(2/2) Buy shares — submitting…",
+  buy_confirming: "(2/2) Buy shares — waiting for testnet confirmation (~36s+)…",
 };
 
 interface Props {
@@ -31,12 +34,15 @@ export function ProofProgress({ step, elapsed, onCancel }: Props) {
     step === "witness" ||
     step === "proving" ||
     step === "submitting" ||
+    step === "confirming" ||
     step === "deposit_witness" ||
     step === "deposit_proving" ||
     step === "deposit_submitting" ||
+    step === "deposit_confirming" ||
     step === "buy_witness" ||
     step === "buy_proving" ||
-    step === "buy_submitting";
+    step === "buy_submitting" ||
+    step === "buy_confirming";
   const seconds = Math.floor(elapsed / 1000);
 
   return (

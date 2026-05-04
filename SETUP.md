@@ -106,6 +106,15 @@ Copy the example env file and fill in the required values:
 cp .env.example .env
 ```
 
+### Public testnet
+
+For Aztec public testnet (no local sandbox), see **[TESTNET_MIGRATION.md](TESTNET_MIGRATION.md)**. After configuring root `.env` and `frontend/.env`:
+
+```bash
+pnpm verify:stack
+pnpm verify:testnet
+```
+
 ### Variable Reference
 
 | Variable                   | Required | Default                                      | Description                                                 |
@@ -121,6 +130,9 @@ cp .env.example .env
 | `PAGERDUTY_ROUTING_KEY`    | No       | —                                            | PagerDuty Events API v2 routing key                         |
 | `VITE_AZTEC_RPC_URL`       | No       | `/rpc` (Vite proxy to `localhost:8080`)      | Frontend: L2 node endpoint (proxied to avoid CORS)          |
 | `VITE_INDEXER_API_URL`     | No       | `http://localhost:3001`                      | Frontend: Indexer API endpoint                              |
+| `VITE_ADMIN_ADDRESSES`     | No       | —                                            | Comma-separated Aztec addresses allowed to use `/admin` UI  |
+| `INDEXER_METADATA_SECRET`  | No       | —                                            | If set, `POST /api/markets/:id/metadata` requires `Authorization: Bearer …` |
+| `KEEPER_AUTO_VOID_MODE`    | No       | `alert_only`                                 | `disabled` \| `alert_only` \| `auto_void` (on-chain not wired yet) |
 | `VITE_SENTRY_DSN`          | No       | —                                            | Sentry DSN for frontend error tracking (no PII)             |
 | `BLOCKED_JURISDICTIONS`    | No       | `US,CN,GB`                                   | ISO country codes to geo-block (Vercel edge middleware)      |
 
