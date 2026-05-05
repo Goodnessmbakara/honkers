@@ -15,7 +15,7 @@ export function AppShell() {
       <NavPrimary />
       <ServiceHealthBanner />
       <BackupBanner />
-      <main style={{ flex: 1 }}>
+      <main style={{ flex: 1, paddingTop: 84 }}>
         <div className="container">
           <Outlet />
         </div>

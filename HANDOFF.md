@@ -1,18 +1,21 @@
 # Honkers — Handoff Document
 
 Status snapshot for co-contributors picking up the project.
-Last updated: 2026-05-04
+Last updated: 2026-05-05
 
 ---
 
 ## Current working status
 
-- **Network:** Aztec **testnet** (`https://rpc.testnet.aztec-labs.com`, Sepolia-backed). All 5 contracts freshly deployed 2026-05-04 after testnet reset. Addresses in `.env` and `frontend/.env` are current.
-- **Wallet:** **Azguard** Chrome extension wallet (replaces the old in-browser PXE). Users connect via Azguard; all signing and proving happens inside the extension. No WASM proving in the browser.
-- **Deployment:** Contracts deploy to testnet via **`aztec-wallet` CLI** (native prover). The TypeScript `deploy.ts` script still exists but only works against a local sandbox with `proverEnabled = false` — it produces invalid proofs on testnet.
+- **Network:** Aztec **testnet** (`https://rpc.testnet.aztec-labs.com`, Sepolia-backed). All 5 contracts deployed 2026-05-04 after testnet reset. Addresses in `.env` and `frontend/.env` are current.
+- **Wallet:** **Azguard** Chrome extension wallet (replaces old in-browser PXE). Users connect via Azguard; all signing and proving happens inside the extension. No WASM proving in the browser. Session persists across page refreshes automatically.
+- **Markets page:** Loads all markets without a connected wallet — reads public storage maps directly from the Aztec node via `node_getPublicStorageAt`. No indexer, no wallet required.
+- **Market question text:** Currently markets show "Market #N" fallback. Question text will be readable once `MarketFactory` is updated to emit public logs on `create_market` and redeployed (T2→T4 on the kanban board — pending).
+- **Deployment:** Contracts deploy to testnet via **`aztec-wallet` CLI** (native prover). The TypeScript `deploy.ts` script only works against a local sandbox with `proverEnabled = false` — it produces invalid proofs on testnet.
 - **Create market** — `MarketFactory.create_market` enforces **bond > 0** and **end date in the future**. Whitelist gate removed from source.
-- **Faucet** — TestToken mint from the Faucet page works for connected wallets. TestToken is our own deployed contract (no USDC/USDT exists on the Aztec testnet — see Why TestToken below).
-- **Explorer:** Contracts visible at `https://testnet.aztecscan.xyz`. "Standard Contract Type: Not available" is cosmetic — our contracts have custom class IDs not in Aztec-Scan's standard registry.
+- **Faucet** — TestToken mint from the Faucet page works for connected wallets.
+- **Explorer:** Contracts visible at `https://testnet.aztecscan.xyz`. "Standard Contract Type: Not available" is cosmetic.
+- **Indexer removed** — The Express+Postgres indexer service has been deleted entirely. All data comes from chain reads.
 
 ---
 
@@ -46,7 +49,7 @@ A full internal audit has been completed — see [`SECURITY.md`](./SECURITY.md).
 
 **No real funds should ever be deposited into the current contracts.**
 
-Fix order before any real-value use: C-2 → C-1 → C-7 → C-3 → C-4 → C-5/C-6 (see SECURITY.md for details).
+Fix order before any real-value use: C-2 → C-1 → C-7 → C-3 → C-4 → C-5/C-6 → A-1 (see SECURITY.md for details).
 
 ---
 
@@ -55,7 +58,7 @@ Fix order before any real-value use: C-2 → C-1 → C-7 → C-3 → C-4 → C-5
 ### Contracts (Phase 1 — complete)
 - **All 5 contracts ported** from Aztec v0.75.0 to v4.2.0 and compile clean
 - **MarketFactory — open creation** — `create_market` no longer checks the whitelist map. Any address can create markets subject to positive bond and end date in the future
-- **Two-phase initialization** on AMM, Oracle, PrivateVault, MarketFactory to break circular deployment dependency (PublicImmutable → PublicMutable + one-time `set_dependencies()`)
+- **Two-phase initialization** on AMM, Oracle, PrivateVault, MarketFactory to break circular deployment dependency
 - **TestToken** — custom faucet token (100 tokens/address/day rate limit)
 - **Codegen regenerated** via `aztec codegen` — TypeScript wrappers in `tests/integration/src/artifacts/`
 
@@ -74,83 +77,120 @@ Fix order before any real-value use: C-2 → C-1 → C-7 → C-3 → C-4 → C-5
 - **Replaced in-browser PXE** with Azguard Chrome extension wallet
 - `frontend/src/utils/azguardWallet.ts` — `AzguardWallet` class implementing the Aztec Wallet interface via `@azguardwallet/client`
 - Strips `fee` from send opts before forwarding to Azguard (Azguard manages fees via its own UI)
-- `asWallet(w: AzguardWallet): Wallet` cast for use in WalletContext
 - No more WASM proving in browser — Azguard extension handles all proving (~30s per tx)
-- `frontend/src/utils/ensureContractRegistered.ts` — registers contracts with Azguard PXE via `wallet.registerContract()` before simulate/send calls; checks `aztecNode.getContract(address)` (on-chain) rather than local PXE store to handle post-testnet-reset states
+- `frontend/src/utils/ensureContractRegistered.ts` — registers contracts with Azguard PXE before simulate/send
+
+### Wallet Persistence — Auto-reconnect (2026-05-05)
+- `WalletContext.tsx` saves wallet type (`"azguard"`, `"embedded"`, or `"sdk:<name>"`) to localStorage on connect. A `useEffect` on mount silently reconnects.
+- Keys: `honkers:wallet-address`, `honkers:wallet-type`
+
+### Markets Page — Wallet-Free Public Storage Reads (2026-05-05)
+- `useMarkets.ts` reads public storage maps directly from the Aztec node — no wallet, no indexer, works for all visitors
+- **Critical slot derivation:** uses `poseidon2HashWithSeparator([base_slot, key], 4015149901)` via `deriveStorageSlotInMap` from `@aztec/stdlib/hash`
+
+### Indexer Removed (2026-05-05)
+- The Express+Postgres indexer (`indexer/` directory) has been **deleted entirely**
+- `docker-compose.yml` now has only `keeper` + `frontend` services — no postgres, no indexer
+- `frontend/.env` — removed `VITE_INDEXER_API_URL`
+- `frontend/src/pages/CreateMarket.tsx` — removed indexer metadata POST and all localStorage fallbacks
+- `frontend/src/hooks/useMarkets.ts` — removed `SEED_META`, `LOCAL_META_KEY`, `fetchMetadataBatch`, all indexer enrichment
+- **Keeper** — removed all `pg`/postgres dependencies. Keeper now reads markets from chain directly via `keeper/src/utils/chainReader.ts`
+- Question text is not available for markets created before public log emission is added (see **What's Left → P0**)
+
+### UI — Floating Pill Navbar (2026-05-05)
+- `NavPrimary.tsx` — navbar is now `position: fixed`, floats 16px from top, centered with 24px side gutters, `borderRadius: 999` (full pill), frosted glass background (`backdrop-filter: blur(16px)`)
+- `WalletConnect.tsx` — "Connect wallet" button is pill-shaped (`borderRadius: 999`)
+- `AppShell.tsx` — `paddingTop: 84` on `<main>` so content clears the floating navbar
 
 ### Frontend Infrastructure
-- **Vite config** — `/rpc` proxy → Aztec testnet RPC, `/api` proxy → indexer
+- **Vite config** — `/rpc` proxy → Aztec testnet RPC (no `/api` proxy — indexer gone)
 - **Global wallet context** — `WalletContext.tsx` centralizes wallet state
-- **Protected routes** — `AdminRoute` gates admin pages
-- **ServiceHealthBanner** — uses direct RPC fetch (no embedded PXE dependency)
-- **Trade flow** — `useTrade` runs `deposit_collateral` then `buy_shares`. Two transactions, two proof cycles. `ProofProgress` shows (1/2) / (2/2) UI
-- **Portfolio** — `usePXE.getPrivateNotes` uses `pxe.debug.getNotes` (PrivateVault slots 8=collateral, 9=shares, 10=winnings)
-
-### Indexer (public state)
-- `node_getPublicStorageAt` + Poseidon2 map slots for MarketFactory, Oracle, AMM
-- Docker Compose: `honkers-indexer` on port 3001, backed by `honkers-postgres` on port 5432
-- Keeper bot in `keeper/` for auto-void and health monitoring
+- **Trade flow** — `useTrade` runs `deposit_collateral` then `buy_shares`. Two transactions, two proof cycles
+- **Portfolio** — `usePXE.getPrivateNotes` uses `pxe.debug.getNotes`
 
 ### Docker Compose (current)
-- Services: postgres, indexer, keeper, frontend
+- Services: **keeper, frontend only** (postgres and indexer removed)
 - All `VITE_*` contract addresses flow from root `.env` into the frontend container
-- Indexer and keeper point at testnet RPC (`https://rpc.testnet.aztec-labs.com`)
 - Run: `docker compose up -d` (no Aztec sandbox needed — we're on testnet)
+- **Frontend changes require a rebuild:** `docker compose up -d --build frontend`
+- For local development skip Docker entirely: `cd frontend && pnpm dev`
 
 ---
 
 ## Known Bugs
 
+### Fixed (2026-05-05 — current session)
+
+- **B21 — Market question text not showing for Market #2**: `useMarkets.ts` had `SEED_META` hardcoded for market #1 only. Root cause: contracts never emit plaintext — only store SHA-256 hashes. Fix path: add `emit_public_log` to `create_market` and redeploy. Interim: markets show "Market #N" fallback until redeployment.
+- **B18 — Markets page shows "No markets found" for all visitors**: `useMarkets` required a connected wallet and used wrong slot derivation. Fixed by rewriting to use `node_getPublicStorageAt` with `deriveStorageSlotInMap`.
+- **B19 — Wrong poseidon2 function for map slot derivation**: Both `useMarkets.ts` and indexer used plain `poseidon2Hash`. Aztec's Map uses `poseidon2HashWithSeparator([base, key], 4015149901)`. Fixed.
+- **B20 — Wallet disconnects on every page refresh**: Fixed by storing wallet type and adding auto-reconnect `useEffect` on mount.
+
 ### Fixed (2026-05-04 — Testnet migration session)
 
-- **B10 — `#stripFeePaymentMethod` missing from AzguardWallet**: The method body was absent, causing "Cannot read properties of undefined (reading 'paymentMethod')" crash when Azguard tried to process transaction opts. Fixed by adding the method body to `azguardWallet.ts`.
-- **B11 — `AccountManager` wrong import path**: Was imported from `@aztec/aztec.js/account` (doesn't export it). Fixed to `@aztec/aztec.js/wallet`.
-- **B12 — `NO_FROM` wrong import**: Was using `AztecAddress.ZERO` for signerless transactions. Fixed to import `NO_FROM` from `@aztec/aztec.js/account`.
-- **B13 — `.send().wait()` wrong in 4.2.0**: In Aztec.js 4.2.0, `DeployMethod.send()` already waits by default and returns the mined contract directly. Removed the extra `.wait()` call and fixed result access from `result.contract.address` → `result.address`.
-- **B14 — `pxe.getContractInstance` vs `aztecNode.getContract`**: The PXE version checks the local registered store (always finds it after register). The node version checks on-chain. Admin account deploy check now uses `aztecNode.getContract()`.
-- **B15 — CLI `register-contract` fails for paths containing `@`**: The `artifactPathParser` treats any path with `@` as `pkg@contract` workspace syntax. pnpm store paths contain `@aztec+...@4.2.0`. Fix: copy artifacts to `/tmp/aztec-artifacts/` before passing to CLI.
-- **B16 — `proverEnabled: false` produces invalid proofs on testnet**: TypeScript deploy script with embedded PXE can't submit real proofs to testnet. Resolution: use `aztec-wallet` CLI (defaults to native proving) for all testnet deployments.
-
-### Fixed (2026-04-15 to 2026-04-27 — earlier sessions)
-
-- **B1** — Account contract not deployed (pxe.getContractInstance vs on-chain check)
-- **B2** — Markets page toString crash (null-guarded simulate results)
-- **B3** — Wallet connect fires multiple times (connectingRef guard)
-- **B4** — Indexer public map reads (Poseidon2 slots)
-- **B5** — IndexedDB transaction lifetime issue on retry (open)
-- **B6** — ERR_CONNECTION_REFUSED to localhost:3001 in Codespace (Vite /api proxy)
-- **B7** — simulate() crash on unregistered contracts (pre-registration fix)
-- **B8** — fieldLikeToBigInt not applied to simulate tuple fields
-- **B9** — create-market.ts used outdated question text
+- **B10** — `#stripFeePaymentMethod` missing from AzguardWallet
+- **B11** — `AccountManager` wrong import path
+- **B12** — `NO_FROM` wrong import
+- **B13** — `.send().wait()` wrong in 4.2.0
+- **B14** — `pxe.getContractInstance` vs `aztecNode.getContract`
+- **B15** — CLI `register-contract` fails for paths containing `@`
+- **B16** — `proverEnabled: false` produces invalid proofs on testnet
 
 ### Open
 
-- **B5** — "Failed to execute 'get' on IDBObjectStore: The transaction has finished" on retry after stale DB nuke — intermittent, needs investigation.
-- **B17** — Admin account shows "NOT FOUND" on `node_getContract` RPC — account contracts may be indexed differently than regular contracts. Functional but cosmetically confusing. Needs verification.
+- **B5** — "Failed to execute 'get' on IDBObjectStore: The transaction has finished" on retry after stale DB nuke — intermittent.
+- **B17** — Admin account shows "NOT FOUND" on `node_getContract` RPC — cosmetic.
+- **B22** — Markets #1 and #2 show "Market #1" / "Market #2" (no question text) — will be fixed once MarketFactory emits public logs and is redeployed.
 
 ---
 
 ## What's Left (by priority)
 
-### P0 — Seed a test market on testnet
+### P0 — Add public log emission to MarketFactory + redeploy (NEXT)
 
-```bash
-cd tests/integration
-AZTEC_RPC_URL=https://rpc.testnet.aztec-labs.com npx tsx src/create-market.ts
+This is the top priority. Add `emit_public_log` to `create_market` in `contracts/market_factory/src/main.nr` so question/criteria/source text is readable from `node_getPublicLogs`. The frontend's `useMarkets.ts` already calls `node_getPublicLogs` and parses the expected field layout — it just returns empty until the contract emits.
+
+**Log layout expected by frontend:**
+```
+fields[0] = market_id
+fields[1..2] = question (2 × 31-byte packed Field)
+fields[3..4] = criteria (2 × 31-byte packed Field)
+fields[5..6] = source   (2 × 31-byte packed Field)
 ```
 
-This requires the admin account to be registered in the CLI wallet (already done as of 2026-05-04 session).
+**Noir pattern:**
+```rust
+use aztec::oracle::avm::emit_public_log;
+
+// In create_market(), after writing storage:
+emit_public_log([
+    market_id,
+    // pack question bytes into Fields (31 bytes each)
+    question_field_0, question_field_1,
+    criteria_field_0, criteria_field_1,
+    source_field_0,   source_field_1,
+]);
+```
+
+**After contract change:**
+1. `cd contracts && aztec build`
+2. Copy artifacts to `/tmp/aztec-artifacts/`
+3. Redeploy MarketFactory via `aztec-wallet` CLI
+4. Update `MARKET_FACTORY_ADDRESS` in `.env` + `frontend/.env`
+5. `docker compose up -d --build frontend`
+
+Note: markets #1 and #2 were created before this change — they will still show "Market #1/2". Create new markets after redeployment to verify the full flow.
 
 ### P0 — End-to-end smoke test with Azguard
 
 | Step | Expected |
 |------|----------|
-| Install Azguard extension | Available on Chrome Web Store |
-| Connect wallet on `http://localhost:5173` | Azguard popup → approve |
+| Open `http://localhost:5173` | Markets page loads — no wallet needed |
+| Connect wallet | Azguard popup → approve → stays connected across refreshes |
 | Faucet page — mint tokens | Transaction submitted, balance updates |
-| Markets page | Markets load from indexer or on-chain fallback |
 | Trade page | deposit_collateral + buy_shares (two Azguard prompts) |
-| Portfolio page | Notes visible, claim_winnings works |
+| Create market | Market appears with question text (after redeployment) |
+| Refresh page | Wallet auto-reconnects without prompting |
 
 ### P1 — Security fixes (before any real-value use)
 
@@ -161,10 +201,9 @@ See `SECURITY.md` for full details. Priority order:
 4. C-3: Remove caller-supplied `fee_recipient`
 5. C-4/C-5/C-6: Auth checks on `refund_void_market`, `initialize_market`, `register_market`
 
-After any contract change: rebuild artifacts (`cd contracts && aztec build`), redeploy to testnet via CLI, update `.env` files.
+After any contract change: rebuild artifacts, redeploy to testnet, update `.env` files.
 
 ### P2 — Remaining frontend gaps
-- Human-readable market question text (indexer `POST /api/markets/:id/metadata` for arbitrary creator markets)
 - Import backup feature (`Backup.tsx` is currently a placeholder)
 - Playwright E2E specs need `data-testid` hooks wired in React components
 
@@ -173,7 +212,6 @@ After any contract change: rebuild artifacts (`cd contracts && aztec build`), re
 - Multi-sig admin (replace single-key admin — see M-8 in SECURITY.md)
 - External security audit before mainnet
 - Publish `aztec-connect/` SDK to npm
-- Docker Compose E2E with all services including Aztec sandbox
 
 ---
 
@@ -181,28 +219,24 @@ After any contract change: rebuild artifacts (`cd contracts && aztec build`), re
 
 ### Testnet (current default)
 
-No local Aztec sandbox needed. Contracts are live on testnet.
-
 ```bash
 # 1. Install dependencies
 pnpm install
 cd tests/integration && pnpm install && cd ../..
 cd frontend && pnpm install && cd ..
 
-# 2. Start infrastructure (postgres + indexer + keeper + frontend)
+# 2. Option A — local dev (recommended, HMR, no rebuild needed)
+cd frontend && pnpm dev
+
+# 2. Option B — full Docker stack (keeper + frontend only)
 docker compose up -d
+# frontend changes require: docker compose up -d --build frontend
 
-# 3. Open frontend
-# http://localhost:5173  (local PC)
-# or forwarded port URL (GitHub Codespace)
-
-# 4. Connect Azguard wallet in browser
-# 5. Use faucet, trade, etc.
+# 3. Open http://localhost:5173
+# 4. Connect Azguard wallet
 ```
 
 ### Redeploying Contracts to Testnet (after contract changes)
-
-If you change Noir contract source, rebuild and redeploy:
 
 ```bash
 # Step 1: Rebuild artifacts
@@ -210,54 +244,34 @@ cd contracts && aztec build && cd ..
 
 # Step 2: Copy artifacts to @-free path (required by CLI artifact parser)
 mkdir -p /tmp/aztec-artifacts
-cp contracts/target/test_token-TestToken.json /tmp/aztec-artifacts/
-cp contracts/target/amm-AMM.json /tmp/aztec-artifacts/
-cp contracts/target/oracle-Oracle.json /tmp/aztec-artifacts/
-cp contracts/target/private_vault-PrivateVault.json /tmp/aztec-artifacts/
 cp contracts/target/market_factory-MarketFactory.json /tmp/aztec-artifacts/
-cp tests/integration/node_modules/.pnpm/@aztec+noir-contracts.js@4.2.0_typescript@5.7.3/node_modules/@aztec/noir-contracts.js/artifacts/sponsored_fpc_contract-SponsoredFPC.json /tmp/aztec-artifacts/SponsoredFPC.json
+# ... copy other artifacts as needed
 
-# Step 3: Register SponsoredFPC (only needed once per CLI wallet DB)
-cd tests/integration
-node_modules/.bin/aztec-wallet \
-  --node-url https://rpc.testnet.aztec-labs.com \
-  register-contract \
-  0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257 \
-  /tmp/aztec-artifacts/SponsoredFPC.json \
-  --alias sponsoredfpc --salt 0
-
-# Step 4: Create/deploy admin account (skip if already deployed)
-node_modules/.bin/aztec-wallet \
-  --node-url https://rpc.testnet.aztec-labs.com \
-  create-account \
-  --alias admin \
-  --secret-key 0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281 \
-  --payment method=fpc-sponsored,fpc=0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257
-
-# Step 5: Deploy each contract (example for AMM)
+# Step 3: Deploy via aztec-wallet CLI
 ADMIN=0x1092539b9d20142398c8a8f3e9b0462f1d38cddd587c94b7bc80ff47e6a0b51a
 FPC=0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257
 
+cd tests/integration
 node_modules/.bin/aztec-wallet \
   --node-url https://rpc.testnet.aztec-labs.com \
-  deploy /tmp/aztec-artifacts/AMM.json \
+  deploy /tmp/aztec-artifacts/MarketFactory.json \
   --from accounts:admin \
   --payment method=fpc-sponsored,fpc=$FPC \
-  --alias amm \
+  --alias market_factory \
   --args $ADMIN
 
-# Step 6: Wire dependencies
+# Step 4: Wire dependencies
 node_modules/.bin/aztec-wallet \
   --node-url https://rpc.testnet.aztec-labs.com \
   send set_dependencies \
   --from accounts:admin \
   --payment method=fpc-sponsored,fpc=$FPC \
-  --contract-address contracts:amm \
-  --contract-artifact /tmp/aztec-artifacts/AMM.json \
-  --args <VAULT_ADDRESS> <ORACLE_ADDRESS>
+  --contract-address contracts:market_factory \
+  --contract-artifact /tmp/aztec-artifacts/MarketFactory.json \
+  --args <AMM_ADDRESS> <ORACLE_ADDRESS> <TOKEN_ADDRESS>
 
-# Step 7: Update .env files with new addresses, then rebuild Docker
-docker compose up -d --build
+# Step 5: Update .env + frontend/.env with new address, rebuild Docker
+docker compose up -d --build frontend
 ```
 
 **Dependency wiring order:**
@@ -266,46 +280,35 @@ docker compose up -d --build
 3. `PrivateVault.set_dependencies(token, amm, oracle)`
 4. `MarketFactory.set_dependencies(amm, oracle, token)`
 
-### Local Sandbox (development/testing only)
-
-Use `deploy.ts` script against a local sandbox. Note: `proverEnabled = false` in the script — this only works on sandbox, not testnet.
-
-```bash
-# Terminal 1
-aztec start --sandbox
-
-# Terminal 2
-cd tests/integration
-AZTEC_RPC_URL=http://localhost:8080 npx tsx src/deploy.ts
-npx tsx src/create-market.ts
-```
-
 ### Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| Azguard shows "contract instance not found" | Contracts not registered with Azguard PXE. `ensureContractRegistered.ts` runs automatically — verify contract addresses in `.env` are current |
+| Markets page shows "No markets found" | Check `VITE_MARKET_FACTORY_ADDRESS` in `frontend/.env`. Verify slot 6 (`next_market_id`) is > 1 via `node_getPublicStorageAt` |
+| Markets show "Market #N" with no question text | MarketFactory doesn't emit public logs yet — see P0 above |
+| Wallet doesn't auto-reconnect on refresh | Check `honkers:wallet-type` in localStorage |
+| Azguard shows "contract instance not found" | `ensureContractRegistered.ts` runs automatically — verify contract addresses in `.env` are current |
 | CLI `register-contract` fails with "nargo workspace" error | Path contains `@`. Copy artifact to `/tmp/aztec-artifacts/` first |
 | `Invalid tx: Invalid proof` | Using TypeScript deploy script against testnet. Use `aztec-wallet` CLI instead |
-| "Account not found in wallet" | Admin account not in CLI wallet DB. Run `create-account` step |
-| Docker frontend env missing addresses | Run `docker compose up -d --build` after updating `.env` |
-| Markets page empty | Indexer may not have the new contract addresses. Update `MARKET_FACTORY_ADDRESS` etc. in Docker env and restart |
-| aztecscan.xyz shows "Standard Contract Type: Not available" | Cosmetic. Our custom contracts don't match Aztec-Scan's standard class registry. No action needed |
+| Docker frontend env missing addresses | Run `docker compose up -d --build frontend` after updating `.env` |
 
 ---
 
 ## Key Architecture Decisions
 
-1. **Azguard wallet** — replaces in-browser PXE. All proving happens in the extension (~30s/tx). Eliminates the 66-minute WASM proving issue. `AzguardWallet` in `frontend/src/utils/azguardWallet.ts` implements the Aztec Wallet interface via `@azguardwallet/client`.
-2. **CLI-based testnet deployment** — `aztec-wallet` CLI defaults to native proving. TypeScript `deploy.ts` with `proverEnabled = false` only works on local sandbox.
-3. **TestToken is our own contract** — No official stablecoin exists on the Aztec testnet. Every Aztec project deploys its own test token.
-4. **Artifact path `@` gotcha** — The CLI's `artifactPathParser` treats any path containing `@` as `pkg@contract` workspace syntax. pnpm store paths include `@aztec+...@4.2.0`. Always copy artifacts to an `@`-free location (e.g. `/tmp/aztec-artifacts/`) before passing to CLI commands.
-5. **SponsoredFPC** — Fee payment contract pre-deployed on testnet at `0x254082b62...`. Register it once in the CLI wallet DB. All deployments and sends use `--payment method=fpc-sponsored,fpc=<address>`.
-6. **`aztecNode.getContract()` vs `pxe.getContractInstance()`** — Node checks on-chain (authoritative after testnet reset). PXE checks local registered store (always returns after `registerContract()`). Use node for deployment checks; use PXE for simulation readiness.
-7. **Two-phase init** — `set_dependencies()` instead of constructor args to break circular deployment dependency (AMM needs Vault, Vault needs AMM).
-8. **Vite dual proxy** — `/rpc` for Aztec RPC (CORS + Codespace), `/api` for indexer REST API. Both configurable via env vars.
-9. **Indexer map slots** — `poseidon2([base_slot, market_id])` matches Aztec public map layout; base slots from codegen `ContractStorageLayout`.
-10. **Open market creation** — Bond + schedule checks on-chain; no creator whitelist (whitelist storage remains for ABI compatibility but is dead code — see SECURITY.md H-5).
+1. **Azguard wallet + auto-reconnect** — Replaces in-browser PXE. All proving in extension (~30s/tx). Session persists via localStorage. `AzguardWallet` in `frontend/src/utils/azguardWallet.ts`.
+2. **No indexer — chain-only reads** — All market data (list, prices, resolution state) comes from direct RPC calls to the Aztec node. `useMarkets.ts` uses `node_getPublicStorageAt`. The old Express+Postgres indexer has been deleted.
+3. **Question text via public logs** — Plaintext question/criteria/source will be read from `node_getPublicLogs` once `MarketFactory.create_market` emits them. The frontend already parses the expected log layout. Pending contract redeployment.
+4. **Domain-separated slot derivation** — Aztec's `Map<Field, PublicMutable<...>>` stores values at `poseidon2HashWithSeparator([base_slot, key], 4015149901)`. Use `deriveStorageSlotInMap` from `@aztec/stdlib/hash` in the frontend.
+5. **CLI-based testnet deployment** — `aztec-wallet` CLI defaults to native proving. TypeScript `deploy.ts` with `proverEnabled = false` only works on local sandbox.
+6. **TestToken is our own contract** — No official stablecoin on Aztec testnet.
+7. **Artifact path `@` gotcha** — CLI's `artifactPathParser` treats paths with `@` as workspace syntax. Always copy to `/tmp/aztec-artifacts/`.
+8. **SponsoredFPC** — Fee payment contract at `0x254082b62...`. Register once in CLI wallet DB.
+9. **Two-phase init** — `set_dependencies()` breaks circular deployment dependency.
+10. **Vite `/rpc` proxy** — Proxies Aztec RPC to avoid CORS. No `/api` proxy (indexer gone).
+11. **Open market creation** — Bond + schedule checks on-chain; whitelist storage is dead code (see SECURITY.md H-5).
+12. **Floating pill navbar** — `NavPrimary` is `position: fixed`, centered, full pill shape. Page content has `paddingTop: 84` to clear it.
+13. **Keeper reads chain directly** — `keeper/src/utils/chainReader.ts` derives map slots and reads MarketFactory + Oracle storage via `node_getPublicStorageAt`. No postgres dependency.
 
 ---
 
@@ -318,24 +321,21 @@ npx tsx src/create-market.ts
 | `tests/integration/src/deploy.ts` | Programmatic deploy script (sandbox only) |
 | `tests/integration/src/create-market.ts` | Market creation script |
 | `tests/integration/src/artifacts/` | Generated TypeScript wrappers |
-| `frontend/src/utils/azguardWallet.ts` | **Azguard extension wallet adapter** |
-| `frontend/src/utils/ensureContractRegistered.ts` | **Pre-registers contracts with wallet PXE before simulate/send** |
-| `frontend/src/contexts/WalletContext.tsx` | Global wallet state provider |
-| `frontend/src/hooks/useAztecWallet.ts` | Wallet connection + stale state cleanup |
-| `frontend/src/hooks/usePXE.ts` | simulateAndProve, simulateView, getPrivateNotes |
+| `frontend/src/utils/azguardWallet.ts` | Azguard extension wallet adapter |
+| `frontend/src/utils/ensureContractRegistered.ts` | Pre-registers contracts with wallet PXE |
+| `frontend/src/contexts/WalletContext.tsx` | Global wallet state + auto-reconnect on mount |
+| `frontend/src/hooks/useMarkets.ts` | **Chain-only reads via node_getPublicStorageAt + node_getPublicLogs** |
 | `frontend/src/hooks/useTrade.ts` | deposit_collateral + buy_shares (two-tx flow) |
-| `frontend/src/hooks/useMarkets.ts` | Indexer + on-chain market list/detail/prices |
-| `frontend/src/utils/MinimalWallet.ts` | BaseWallet bridge for AccountManager (sandbox only) |
-| `frontend/src/utils/feePolicy.ts` | Sponsored FPC then fee-juice fallback |
-| `frontend/src/utils/browserSecretVault.ts` | AES-GCM encrypted wallet secret storage |
+| `frontend/src/pages/CreateMarket.tsx` | Market creation form (no indexer calls) |
+| `frontend/src/components/layout/NavPrimary.tsx` | **Floating pill navbar** |
 | `frontend/src/config/aztec.ts` | Config from env vars |
-| `frontend/.env` | Contract addresses + RPC/indexer URLs |
-| `indexer/src/indexer/mapSlot.ts` | Poseidon2 map slot derivation |
-| `indexer/src/indexer/eventListener.ts` | Poll + index factory/oracle/AMM public state |
-| `keeper/src/` | Auto-void bot + health monitoring |
+| `frontend/.env` | Contract addresses + RPC URL (no indexer URL) |
+| `keeper/src/utils/chainReader.ts` | **RPC-based market + oracle state reader (replaces postgres)** |
+| `keeper/src/jobs/pollMarketExpiry.ts` | Expired market alert job (chain-based) |
+| `keeper/src/jobs/triggerAutoVoid.ts` | Auto-void alert job (chain-based) |
+| `keeper/src/` | Keeper bot (no postgres dependency) |
 | `aztec-connect/` | Reusable wallet SDK |
-| `SECURITY.md` | **Full smart contract security audit** |
+| `SECURITY.md` | Full smart contract security audit |
 | `SETUP.md` | Setup guide |
-| `scripts/preflight-testnet.mjs` | `pnpm verify:testnet` smoke check |
-| `docker-compose.yml` | All services (postgres, indexer, keeper, frontend) |
-| `.env` | Root env (indexer/keeper contract addresses) |
+| `docker-compose.yml` | **keeper + frontend only (postgres + indexer removed)** |
+| `.env` | Root env (contract addresses, no DB URL) |

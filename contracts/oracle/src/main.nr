@@ -49,6 +49,8 @@ pub contract Oracle {
 
     #[external("public")]
     fn register_market(market_id: Field, end_date: Field) {
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can register markets");
         let state = self.storage.resolution_state.at(market_id).read();
         assert(state == 0, "Market already registered");
         self.storage.end_dates.at(market_id).write(end_date);

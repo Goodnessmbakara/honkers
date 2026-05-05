@@ -25,7 +25,6 @@ export function CreateMarket() {
   const hashToField = async (text: string): Promise<bigint> => {
     const encoded = new TextEncoder().encode(text);
     const hashBuffer = await crypto.subtle.digest("SHA-256", encoded);
-    // Truncate to 31 bytes to fit in a Noir field (< 2^254)
     const bytes = new Uint8Array(hashBuffer).slice(0, 31);
     let value = 0n;
     for (const b of bytes) {
@@ -47,6 +46,7 @@ export function CreateMarket() {
         hashToField(criteria),
         hashToField(source),
       ]);
+
       const endUnix = Math.floor(new Date(endDate).getTime() / 1000);
       const bondAmount = Math.floor(Number(bond) * 1e6); // 6 decimal USDC
 
@@ -156,7 +156,7 @@ export function CreateMarket() {
         <p style={{ color: "var(--positive)", marginTop: "var(--space-4)", fontSize: "0.875rem" }}>
           Market created. TX:{" "}
           <a
-            href={`https://testnet.aztecscan.xyz/tx/${txHash}`}
+            href={`https://testnet.aztecscan.xyz/tx-effects/${txHash}`}
             target="_blank"
             rel="noopener noreferrer"
             style={{ color: "var(--positive)", textDecoration: "underline", wordBreak: "break-all" }}

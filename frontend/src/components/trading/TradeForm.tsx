@@ -14,10 +14,12 @@ interface Props {
   noPrice: number;
   maxBalance: number;
   onSubmit: (side: TradeSide, amount: number) => void;
+  onFaucet?: () => void;
+  faucetLoading?: boolean;
   disabled?: boolean;
 }
 
-export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, disabled }: Props) {
+export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, faucetLoading, disabled }: Props) {
   const [side, setSide] = useState<TradeSide>("yes");
   const [amount, setAmount] = useState("");
   const parsedAmount = Number(amount) || 0;
@@ -73,6 +75,16 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, disabled }:
             Max
           </button>
         </div>
+        {maxBalance === 0 && onFaucet && (
+          <button
+            className="btn-ghost"
+            style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "var(--space-1)", padding: 0, textAlign: "left" }}
+            onClick={onFaucet}
+            disabled={faucetLoading}
+          >
+            {faucetLoading ? "Requesting tokens…" : "⚡ Get test USDC"}
+          </button>
+        )}
       </div>
 
       {/* Estimated shares */}

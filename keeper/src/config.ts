@@ -1,6 +1,5 @@
 // ---------------------------------------------------------------------------
 // Keeper bot configuration — loaded from environment variables.
-// Defaults target Aztec testnet.
 // ---------------------------------------------------------------------------
 
 function requireEnv(key: string, fallback?: string): string {
@@ -15,11 +14,8 @@ export const config = {
   /** Aztec JSON-RPC endpoint. */
   aztecRpcUrl: requireEnv("AZTEC_RPC_URL", "https://rpc.testnet.aztec-labs.com"),
 
-  /** PostgreSQL connection (reads indexer DB for market list). */
-  databaseUrl: requireEnv(
-    "DATABASE_URL",
-    "postgresql://honkers:honkers@localhost:5432/honkers",
-  ),
+  /** MarketFactory contract address — used to enumerate markets from chain. */
+  marketFactoryAddress: requireEnv("MARKET_FACTORY_ADDRESS", ""),
 
   /** Master polling interval in ms (default 10 minutes). */
   pollIntervalMs: Number(requireEnv("KEEPER_POLL_INTERVAL_MS", "600000")),

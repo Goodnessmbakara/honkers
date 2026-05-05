@@ -9,7 +9,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { Position, WinningClaim } from "../types";
 import { aztecConfig } from "../config/aztec";
 import { usePXE } from "./usePXE";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { Fr } from "@aztec/aztec.js/fields";
 
 const VAULT_COLLATERAL_SLOT = 8;
@@ -17,19 +16,11 @@ const VAULT_SHARES_SLOT = 9;
 const VAULT_WINNINGS_SLOT = 10;
 
 export function usePortfolio(walletAddress: string | null) {
-  const { getPrivateNotes, simulateAndProve, simulateView } = usePXE();
+  const { getPrivateNotes, simulateAndProve } = usePXE();
   const [balance, setBalance] = useState<number>(0);
   const [positions, setPositions] = useState<Position[]>([]);
   const [winnings, setWinnings] = useState<WinningClaim[]>([]);
   const [loading, setLoading] = useState(false);
-
-  const resolveFeeRecipient = useCallback(async (): Promise<AztecAddress> => {
-    if (aztecConfig.feeRecipient) {
-      return AztecAddress.fromString(aztecConfig.feeRecipient);
-    }
-    const admin = await simulateView(aztecConfig.contracts.privateVault, "get_admin", []);
-    return AztecAddress.fromString(String(admin));
-  }, [simulateView]);
 
   const refresh = useCallback(async () => {
     if (!walletAddress) return;
@@ -77,15 +68,14 @@ export function usePortfolio(walletAddress: string | null) {
   const claimWinnings = useCallback(
     async (marketId: number) => {
       if (!walletAddress) throw new Error("Not connected");
-      const feeRecipient = await resolveFeeRecipient();
       return simulateAndProve(
         aztecConfig.contracts.privateVault,
         "claim_winnings",
-        [new Fr(marketId), feeRecipient],
+        [new Fr(marketId)],
         walletAddress,
       );
     },
-    [walletAddress, simulateAndProve, resolveFeeRecipient],
+    [walletAddress, simulateAndProve],
   );
 
   return { balance, positions, winnings, loading, refresh, claimWinnings };

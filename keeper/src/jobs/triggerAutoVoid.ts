@@ -1,80 +1,52 @@
 // ---------------------------------------------------------------------------
-// Job: Trigger auto-void for markets past the 72-hour grace period.
-// Calls Oracle.void_market() on-chain for each eligible market.
+// Job: Alert on markets past the 72-hour grace period with no resolution.
+// Reads market + oracle state directly from chain via RPC.
 //
-// v4.1.3: State-changing transactions require a full wallet to simulate,
-// prove, and send. This currently logs the intent and alerts the admin.
-// A full implementation would use a server-side EmbeddedWallet from
-// @aztec/wallets/embedded (Node.js entrypoint).
+// Full on-chain void submission requires a server-side wallet (not yet
+// implemented). This job alerts the admin to void manually via the UI.
 // ---------------------------------------------------------------------------
 
-import { Pool } from "pg";
-import { config } from "../config";
-import { alertInfo, alertCritical } from "../utils/alerts";
+import { config } from "../config.js";
+import { alertInfo, alertCritical } from "../utils/alerts.js";
+import { readAllMarkets, readOracleState } from "../utils/chainReader.js";
 
-/**
- * Finds markets where:
- *   1. end_date + GRACE_PERIOD (72h) has elapsed, AND
- *   2. No resolution has been finalised (state != 'resolved'), AND
- *   3. The market has not already been voided.
- *
- * For each, attempts to submit an `Oracle.void_market(market_id)` transaction.
- */
-export async function triggerAutoVoid(pool: Pool): Promise<void> {
-  if (config.autoVoidMode === "disabled") {
-    return;
-  }
+export async function triggerAutoVoid(): Promise<void> {
+  if (config.autoVoidMode === "disabled") return;
+  if (!config.marketFactoryAddress) return;
 
   const now = Math.floor(Date.now() / 1000);
   const voidCutoff = now - config.gracePeriodSecs;
 
-  const { rows } = await pool.query<{
-    market_id: number;
-    end_date: number;
-  }>(
-    `SELECT m.market_id, m.end_date
-       FROM markets m
-      WHERE m.end_date < to_timestamp($1)
-        AND m.status = 'open'
-        AND NOT EXISTS (
-              SELECT 1 FROM resolutions r
-               WHERE r.market_id = m.market_id
-                 AND r.state IN (2, 4)
-            )
-      ORDER BY m.end_date ASC`,
-    [voidCutoff],
-  );
+  const markets = await readAllMarkets(config.marketFactoryAddress);
+  const eligible: typeof markets = [];
 
-  if (rows.length === 0) return;
+  for (const m of markets) {
+    if (m.endDate >= voidCutoff) continue;
+    const state = config.oracleAddress
+      ? await readOracleState(config.oracleAddress, m.marketId)
+      : 0;
+    // Skip already finalised (2) or already voided (4)
+    if (state === 2 || state === 4) continue;
+    eligible.push(m);
+  }
+
+  if (eligible.length === 0) return;
 
   await alertInfo(
-    `Auto-voiding ${rows.length} market(s): [${rows.map((r) => r.market_id).join(", ")}]`,
+    `${eligible.length} market(s) past grace period need voiding: [${eligible.map((m) => m.marketId).join(", ")}]`,
   );
 
-  for (const row of rows) {
+  for (const m of eligible) {
     try {
-      // TODO: Implement server-side EmbeddedWallet transaction submission.
-      // In v4.1.3, submitting a state-changing tx requires:
-      //   1. Create a NodeEmbeddedWallet (from @aztec/wallets/embedded)
-      //   2. Contract.at(oracleAddress, OracleArtifact, wallet)
-      //   3. contract.methods.void_market(market_id).send({ from: adminAddress })
-      //
-      // For now, alert the admin so they can void manually via the UI.
+      // TODO: submit Oracle.void_market(market_id) via server-side wallet
+      // Requires @aztec/wallets/embedded Node.js entrypoint + admin key.
       await alertInfo(
-        `Market ${row.market_id} is past grace period and needs voiding. ` +
-        `Manual action required until server-side wallet is configured.`,
+        `Market ${m.marketId} eligible for auto-void (end_date=${m.endDate}). Manual action required.`,
       );
-
-      console.log(
-        `[keeper] Market ${row.market_id} eligible for auto-void (end_date=${row.end_date}). ` +
-        `Server-side tx submission not yet implemented.`,
-      );
+      console.log(`[keeper] Market ${m.marketId} void-eligible (end_date=${m.endDate})`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      await alertCritical(
-        `Failed to void market ${row.market_id}: ${msg}`,
-        `void-market-${row.market_id}`,
-      );
+      await alertCritical(`Failed processing void for market ${m.marketId}: ${msg}`, `void-market-${m.marketId}`);
     }
   }
 }

@@ -180,7 +180,7 @@ export function WalletConnect() {
         className="btn-secondary"
         onClick={openPicker}
         title={walletError}
-        style={{ opacity: 0.8 }}
+        style={{ opacity: 0.8, borderRadius: 999 }}
       >
         <Wallet size={16} />
         Retry connect
@@ -195,6 +195,7 @@ export function WalletConnect() {
         className="btn-primary"
         onClick={openPicker}
         disabled={syncing}
+        style={{ borderRadius: 999 }}
       >
         <Wallet size={16} />
         {syncing ? "Connecting…" : "Connect wallet"}

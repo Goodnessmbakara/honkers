@@ -23,20 +23,28 @@ export function NavPrimary() {
   return (
     <header
       style={{
-        borderBottom: "1px solid var(--border)",
-        background: "var(--surface)",
-        position: "sticky",
-        top: 0,
+        position: "fixed",
+        top: 16,
+        left: "50%",
+        transform: "translateX(-50%)",
+        width: "calc(100% - 48px)",
+        maxWidth: 1100,
         zIndex: 50,
       }}
     >
       <div
-        className="container"
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          height: 56,
+          height: 52,
+          padding: "0 var(--space-4)",
+          background: "rgba(14,14,20,0.80)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: 999,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
         }}
       >
         {/* Wordmark */}
@@ -82,3 +90,4 @@ export function NavPrimary() {
     </header>
   );
 }
+

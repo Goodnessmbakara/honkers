@@ -112,7 +112,12 @@
       "Bash(mkdir -p /tmp/aztec-artifacts)",
       "Bash(cp /Users/abba/Desktop/aztec/tests/integration/node_modules/.pnpm/@aztec+noir-contracts.js@4.2.0_typescript@5.7.3/node_modules/@aztec/noir-contracts.js/artifacts/sponsored_fpc_contract-SponsoredFPC.json /tmp/aztec-artifacts/SponsoredFPC.json)",
       "Bash(read f *)",
-      "Bash(node_modules/.bin/aztec-wallet --node-url https://rpc.testnet.aztec-labs.com send set_dependencies --from accounts:admin --payment method=fpc-sponsored,fpc=0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257 --contract-address contracts:amm --contract-artifact /Users/abba/Desktop/aztec/contracts/target/amm-AMM.json --args 0x11dd43c8764811ed0b87e36fce7aecb58e465bc10df55cd49e0ae9004c9b2c7c 0x14d5dfe1305071d6fc77de04698d323a7347339a950fe8571f24b4003511f449)"
+      "Bash(node_modules/.bin/aztec-wallet --node-url https://rpc.testnet.aztec-labs.com send set_dependencies --from accounts:admin --payment method=fpc-sponsored,fpc=0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257 --contract-address contracts:amm --contract-artifact /Users/abba/Desktop/aztec/contracts/target/amm-AMM.json --args 0x11dd43c8764811ed0b87e36fce7aecb58e465bc10df55cd49e0ae9004c9b2c7c 0x14d5dfe1305071d6fc77de04698d323a7347339a950fe8571f24b4003511f449)",
+      "Bash(xargs cat *)",
+      "Bash(pnpm tsc *)",
+      "Bash(bash /Users/abba/Desktop/aztec/tests/integration/node_modules/.bin/../.pnpm/@aztec+aztec@4.2.0_@aztec+noir-test-contracts.js@4.2.0_typescript@5.7.3__@emnapi+core@1_379201897380b4251c3f49952dcca0ba/node_modules/@aztec/aztec/scripts/aztec.sh build)",
+      "Bash(bash --version)",
+      "Bash(zsh /Users/abba/Desktop/aztec/tests/integration/node_modules/.pnpm/@aztec+aztec@4.2.0_@aztec+noir-test-contracts.js@4.2.0_typescript@5.7.3__@emnapi+core@1_379201897380b4251c3f49952dcca0ba/node_modules/@aztec/aztec/scripts/aztec.sh --help)"
     ]
   }
 }

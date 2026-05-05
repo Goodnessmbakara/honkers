@@ -53,6 +53,7 @@ const walletManager = WalletManager.configure({ extensions: { enabled: true } })
 // Persistence
 // ---------------------------------------------------------------------------
 const STORAGE_KEY = "honkers:wallet-address";
+const WALLET_TYPE_KEY = "honkers:wallet-type"; // "azguard" | "embedded" | "sdk:<providerName>"
 const CONNECT_TIMELINE_KEY = "honkers:connect-timeline";
 const CONNECT_TIMELINE_LIMIT = 40;
 
@@ -270,7 +271,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           await (minimalWallet as unknown as { registerContract: (...a: unknown[]) => Promise<void> }).registerContract(fpcInstance, SponsoredFPCContractArtifact);
           const paymentMethod = new SponsoredFeePaymentMethod(fpcInstance.address);
           const deployMethod = await accountManager.getDeployMethod();
-          await deployMethod.send({ from: (await import("@aztec/aztec.js/addresses")).AztecAddress.ZERO, fee: { paymentMethod } });
+          await deployMethod.send({ from: instance.address, fee: { paymentMethod } });
           console.log("[WalletContext] Account contract deployed.");
         } catch (deployErr) {
           const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
@@ -282,6 +283,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
       const address = account.getAddress().toString();
       localStorage.setItem(STORAGE_KEY, address);
+      localStorage.setItem(WALLET_TYPE_KEY, "embedded");
       setAztecNode(node);
       setWallet(minimalWallet as unknown as Wallet);
       setStatus("connected", "Connected via Browser PXE");
@@ -358,6 +360,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             : String(firstAccount);
 
         localStorage.setItem(STORAGE_KEY, address);
+        const walletType = provider.name.toLowerCase().includes("azguard")
+          ? "azguard"
+          : `sdk:${provider.name}`;
+        localStorage.setItem(WALLET_TYPE_KEY, walletType);
         const node = await getAztecNode();
         setAztecNode(node);
         setWallet(connectedWallet);
@@ -382,6 +388,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // ---------------------------------------------------------------------------
   const disconnect = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(WALLET_TYPE_KEY);
     activeProviderRef.current?.disconnect().catch(() => {});
     activeProviderRef.current = null;
     setWallet(null);
@@ -402,6 +409,75 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const clearConnectTimeline = useCallback(() => {
     localStorage.removeItem(CONNECT_TIMELINE_KEY);
     setConnectTimeline([]);
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Auto-reconnect on page load — silently restore the previous session.
+  //
+  // Azguard won't show a permission popup if the dapp is already whitelisted.
+  // Embedded PXE state lives in IndexedDB and survives refresh.
+  // If reconnection fails, clear stored keys and show connect button normally.
+  // ---------------------------------------------------------------------------
+  const autoReconnectAttempted = useRef(false);
+
+  useEffect(() => {
+    if (autoReconnectAttempted.current) return;
+    autoReconnectAttempted.current = true;
+
+    const savedAddress = localStorage.getItem(STORAGE_KEY);
+    const walletType = localStorage.getItem(WALLET_TYPE_KEY);
+    if (!savedAddress || !walletType) return;
+
+    (async () => {
+      setState((s) => ({ ...s, syncing: true }));
+      try {
+        if (walletType === "azguard") {
+          const azguardWallet = await AzguardWallet.connect("Honkers", "testnet");
+          const connectedWallet = asWallet(azguardWallet);
+
+          azguardWallet.onDisconnected.addHandler(() => {
+            console.warn("[WalletContext] Azguard disconnected.");
+            disconnect();
+          });
+
+          const accounts = await connectedWallet.getAccounts();
+          if (accounts.length === 0) throw new Error("No accounts");
+
+          const firstAccount = accounts[0];
+          const address =
+            firstAccount && typeof firstAccount === "object" && "item" in firstAccount
+              ? String((firstAccount as { item: { toString(): string } }).item)
+              : String(firstAccount);
+
+          const node = await getAztecNode();
+          setAztecNode(node);
+          setWallet(connectedWallet);
+          localStorage.setItem(STORAGE_KEY, address);
+          setState({ connected: true, address, syncing: false });
+          setConnectStage("connected");
+          console.log("[WalletContext] Auto-reconnected via Azguard:", address);
+
+        } else if (walletType === "embedded") {
+          await connectWithEmbeddedPXE();
+
+        } else {
+          // sdk:<providerName> — can't silently reconnect without ECDH re-handshake;
+          // clear and fall through to manual connect.
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(WALLET_TYPE_KEY);
+          setState((s) => ({ ...s, syncing: false }));
+        }
+      } catch (err) {
+        console.warn("[WalletContext] Auto-reconnect failed, clearing session:", err);
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(WALLET_TYPE_KEY);
+        setWalletError(null);
+        setState({ connected: false, address: null, syncing: false });
+      }
+    })();
+  // connectWithEmbeddedPXE and disconnect are stable callbacks — intentionally
+  // omitted from deps to run only once on mount.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

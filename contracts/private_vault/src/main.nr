@@ -142,8 +142,9 @@ pub contract PrivateVault {
     }
 
     #[external("private")]
-    fn claim_winnings(market_id: Field, fee_recipient: AztecAddress) {
+    fn claim_winnings(market_id: Field) {
         let sender = self.msg_sender();
+        let fee_recipient = self.storage.fee_recipient.read();
 
         let options = NoteGetterOptions::new();
         let notes = self.storage.winnings.at(sender).pop_notes(options);

@@ -23,6 +23,7 @@ They have fundamental economic security failures — not edge-case exploits — 
 
 | ID | Severity | Contract | Issue |
 |----|----------|----------|-------|
+| A-1 | Architecture | All | No public event emission — indexer deleted, frontend ready, contract emit pending |
 | C-1 | Critical | AMM + PrivateVault | AMM and Vault are economically disconnected |
 | C-2 | Critical | PrivateVault | `settle_winnings` never verifies Oracle outcome |
 | C-3 | Critical | PrivateVault | `fee_recipient` is caller-supplied, not from storage |
@@ -291,6 +292,58 @@ All amounts use `Field` rather than `u64` / `u128`. Casting between `Field` and 
 
 ---
 
+## Architecture Finding
+
+### A-1 — No Public Event Emission — All Contracts
+
+**Severity:** Architecture (required before mainnet)  
+**Affects:** MarketFactory, AMM, Oracle, PrivateVault, TestToken  
+**Status:** Partially addressed — indexer deleted, frontend reads `node_getPublicLogs`. Contract emission pending redeployment.
+
+None of the five contracts call `emit_public_log()` for any state-changing action.
+
+**Current state (2026-05-05):**
+- The Express+Postgres indexer has been **deleted**. All market data comes from direct RPC reads.
+- `frontend/src/hooks/useMarkets.ts` already calls `node_getPublicLogs({ contractAddress: factory })` and parses the expected field layout. It returns empty until the contract emits.
+- `keeper/src/utils/chainReader.ts` reads market list via `node_getPublicStorageAt` slot polling — works but is sensitive to layout changes.
+- **Remaining gap:** `MarketFactory.create_market` does not yet emit a public log. Markets show "Market #N" fallback — no question text visible.
+
+**Required fix for MarketFactory (next deployment):**
+
+Add to `create_market()` in `contracts/market_factory/src/main.nr`:
+```rust
+use aztec::oracle::avm::emit_public_log;
+
+// Pack question/criteria/source strings into Fields (31 bytes each)
+// then emit. Frontend expects this layout:
+// [market_id, q_field_0, q_field_1, c_field_0, c_field_1, s_field_0, s_field_1]
+emit_public_log([
+    market_id,
+    question_field_0, question_field_1,
+    criteria_field_0, criteria_field_1,
+    source_field_0,   source_field_1,
+]);
+```
+
+The `create_market` function currently receives hashes — it needs to also accept the plaintext strings (or packed Field arrays) so it can emit them. The contract call from `CreateMarket.tsx` would need updating accordingly.
+
+**Full event table for all contracts (implement before mainnet):**
+
+| Contract | Function | Event to emit |
+|----------|----------|---------------|
+| MarketFactory | `create_market` | `[market_id, q0, q1, c0, c1, s0, s1]` — **NEXT** |
+| AMM | `initialize_market` | `[market_id, reserve_yes, reserve_no]` |
+| AMM | `swap` | `[market_id, side, amount_in, shares_out]` |
+| Oracle | `register_market` | `[market_id, end_date]` |
+| Oracle | `propose_resolution` | `[market_id, outcome]` |
+| Oracle | `finalise_resolution` | `[market_id]` |
+| Oracle | `void_market` | `[market_id]` |
+| PrivateVault | `emergency_pause` / `unpause` | `[paused_flag]` |
+
+**Priority:** MarketFactory emission is P0 — blocks question text display. Others are P2.
+
+---
+
 ## Priority Fix Order
 
 For any deployment with real value or open public access, fix in this order:
@@ -304,6 +357,7 @@ For any deployment with real value or open public access, fix in this order:
 7. **H-1** — Enforce pause flag in all private functions
 8. **H-2 / H-3** — Fix AMM `k` invariant maintenance
 9. **M-8** — Implement two-step admin transfer
+10. **A-1** — Add `emit_public_log` to all state-changing functions in all contracts
 
 ---
 

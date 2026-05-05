@@ -8,6 +8,7 @@ import { useMarketDetail } from "../hooks/useMarkets";
 import { useTrade } from "../hooks/useTrade";
 import { useWallet } from "../hooks/useWallet";
 import { usePortfolio } from "../hooks/usePortfolio";
+import { useFaucet } from "../hooks/useFaucet";
 import { TradeForm } from "../components/trading/TradeForm";
 import { ProofProgress } from "../components/trading/ProofProgress";
 import { TxStatus } from "../components/trading/TxStatus";
@@ -22,6 +23,7 @@ export function Trade() {
   const { connected, address } = useWallet();
   const { balance } = usePortfolio(address);
   const { step, elapsed, txHash, txHashes, error, execute, cancel, reset } = useTrade();
+  const { request: requestFaucet, loading: faucetLoading } = useFaucet(address);
 
   if (loading) {
     return (
@@ -104,6 +106,8 @@ export function Trade() {
                 if (!address) return;
                 execute({ marketId: market.marketId, side, amount, maxSlippage: 500 }, address);
               }}
+              onFaucet={() => requestFaucet(100).catch(() => {})}
+              faucetLoading={faucetLoading}
             />
           )}
         </>

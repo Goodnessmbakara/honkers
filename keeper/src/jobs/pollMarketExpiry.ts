@@ -1,49 +1,41 @@
 // ---------------------------------------------------------------------------
 // Job: Poll for expired markets that lack a resolution proposal.
-// Runs every KEEPER_POLL_INTERVAL_MS (default 5 min).
+// Reads market list directly from the MarketFactory public storage via RPC.
 // ---------------------------------------------------------------------------
 
-import { Pool } from "pg";
-import { config } from "../config";
-import { alertInfo, alertWarning } from "../utils/alerts";
+import { config } from "../config.js";
+import { alertInfo, alertWarning } from "../utils/alerts.js";
+import { readAllMarkets, readOracleState } from "../utils/chainReader.js";
 
-/**
- * Queries the indexer DB for markets whose `end_date` has passed but have
- * no row in the `resolutions` table, meaning no one has proposed a resolution
- * yet.  Logs them and sends an alert so the admin team can act.
- */
-export async function pollMarketExpiry(pool: Pool): Promise<void> {
+export async function pollMarketExpiry(): Promise<void> {
+  if (!config.marketFactoryAddress) return;
+
   const now = Math.floor(Date.now() / 1000);
+  const markets = await readAllMarkets(config.marketFactoryAddress);
 
-  const { rows } = await pool.query<{
-    market_id: number;
-    question_hash: string;
-    end_date: number;
-  }>(
-    `SELECT m.market_id, m.question_hash, m.end_date
-       FROM markets m
-      WHERE m.end_date < to_timestamp($1)
-        AND m.status = 'open'
-        AND NOT EXISTS (
-              SELECT 1 FROM resolutions r WHERE r.market_id = m.market_id
-            )
-      ORDER BY m.end_date ASC`,
-    [now],
-  );
+  const expired = markets.filter((m) => m.endDate < now);
+  if (expired.length === 0) return;
 
-  if (rows.length === 0) return;
+  // Check oracle resolution state for each expired market
+  const unresolved: typeof markets = [];
+  for (const m of expired) {
+    const state = config.oracleAddress
+      ? await readOracleState(config.oracleAddress, m.marketId)
+      : 0;
+    // state 0 = unresolved — no proposal yet
+    if (state === 0) unresolved.push(m);
+  }
 
-  const ids = rows.map((r) => r.market_id);
-  const message = `${rows.length} expired market(s) without resolution: [${ids.join(", ")}]`;
-  await alertInfo(message);
+  if (unresolved.length === 0) return;
 
-  // Check if any are approaching the void window (end_date + gracePeriod)
+  const ids = unresolved.map((m) => m.marketId);
+  await alertInfo(`${unresolved.length} expired market(s) without resolution: [${ids.join(", ")}]`);
+
   const voidThreshold = now - config.gracePeriodSecs + 3600; // warn 1h before void-eligible
-  const urgent = rows.filter((r) => r.end_date < voidThreshold);
+  const urgent = unresolved.filter((m) => m.endDate < voidThreshold);
   if (urgent.length > 0) {
-    const urgentIds = urgent.map((r) => r.market_id);
     await alertWarning(
-      `${urgent.length} market(s) approaching auto-void window: [${urgentIds.join(", ")}]`,
+      `${urgent.length} market(s) approaching auto-void window: [${urgent.map((m) => m.marketId).join(", ")}]`,
     );
   }
 }

@@ -1,38 +1,224 @@
 // ---------------------------------------------------------------------------
-// useMarkets — reads market data directly from the Aztec node / contracts.
-// No indexer required: all data is fetched via contract simulation over the
-// PXE's aztecNode connection.
+// useMarkets — reads market list directly from public storage maps on the
+// Aztec node. No wallet required: any visitor sees all markets.
+//
+// Slot derivation: poseidon2([base_slot_Fr, market_id_Fr])
+// Base slots match MarketFactory storage layout (from contract source).
+//
+// Question/criteria/source text: Once the MarketFactory contract is updated
+// to emit public logs on create_market, this hook will read them via
+// node_getPublicLogs. Until then, markets without emitted text show
+// "Market #N" as a fallback — no hardcoded seed data.
 // ---------------------------------------------------------------------------
 
 import { useCallback, useEffect, useState } from "react";
 import { aztecConfig } from "../config/aztec";
+import type { Market, MarketDetail, PricePoint } from "../types";
 import { useWalletContext } from "../contexts/WalletContext";
 import { getArtifact } from "../config/contractArtifacts";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
-import type { Market, MarketDetail, PricePoint } from "../types";
 import { ammPriceToFloat, fieldLikeToBigInt, unwrapSimulate } from "../utils/aztecSimulate";
 import { ensureContractRegisteredWithPXE } from "../utils/ensureContractRegistered";
 
-// Known market questions — maps questionHash → human-readable text.
-// Add entries here after creating markets on-chain.
-const KNOWN_QUESTIONS: Record<string, string> = {
-  "0x00762187ff993c3095a609b997a1894c40eb6d6a70b2c16016ad6f752342f809":
-    "Will Bitcoin (BTC) reach $200,000 USD by December 31, 2026?",
-};
+// ---------------------------------------------------------------------------
+// MarketFactory public storage base slots (from contracts/market_factory/src/main.nr)
+// ---------------------------------------------------------------------------
+const MF_SLOTS = {
+  next_market_id: 6n,
+  market_question_hash: 8n,
+  market_criteria_hash: 9n,
+  market_source_hash: 10n,
+  market_creator: 11n,
+  market_end_date: 12n,
+  market_bond: 13n,
+} as const;
 
+const ZERO = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+// ---------------------------------------------------------------------------
+// RPC helpers — talk directly to the Aztec node, no wallet needed.
+// ---------------------------------------------------------------------------
+async function aztecRpc(method: string, params: unknown[]): Promise<string> {
+  const url = aztecConfig.pxeUrl;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const json = (await res.json()) as { result?: string; error?: unknown };
+  if (json.error) throw new Error(`[rpc] ${method}: ${JSON.stringify(json.error)}`);
+  return String(json.result ?? ZERO);
+}
+
+async function readSlot(contract: string, slotHex: string): Promise<bigint> {
+  const raw = await aztecRpc("node_getPublicStorageAt", ["latest", contract, slotHex]);
+  if (!raw || raw === ZERO || raw === "0x0") return 0n;
+  return BigInt(raw);
+}
+
+/** Derive the storage slot for a Map entry using Aztec's domain-separated hash. */
+async function mapSlot(base: bigint, key: bigint): Promise<string> {
+  const { deriveStorageSlotInMap } = await import("@aztec/stdlib/hash");
+  const { Fr } = await import("@aztec/aztec.js/fields");
+  const frKey = new Fr(key);
+  const h = await deriveStorageSlotInMap(new Fr(base), { toField: () => frKey });
+  return h.toString();
+}
+
+function toHex64(n: bigint): string {
+  return `0x${n.toString(16).padStart(64, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// Public log reading — fetch question/criteria/source from emitted events.
+// The MarketFactory emits a public log on create_market containing:
+//   [market_id, question_packed_0, question_packed_1, criteria_packed_0,
+//    criteria_packed_1, source_packed_0, end_date, creator_field]
+//
+// Each packed field encodes up to 31 UTF-8 bytes (fits in a Noir Field).
+// Returns a map from market_id → { question, criteria, source }.
+// ---------------------------------------------------------------------------
+interface MarketText { question?: string; criteria?: string; source?: string; }
+
+function fieldsToString(fields: bigint[]): string {
+  let result = "";
+  for (const f of fields) {
+    if (f === 0n) continue;
+    // Each field encodes up to 31 bytes big-endian
+    const bytes: number[] = [];
+    let v = f;
+    while (v > 0n) {
+      bytes.unshift(Number(v & 0xffn));
+      v >>= 8n;
+    }
+    // Trim leading zeros (from packing) and decode as UTF-8
+    const chunk = new TextDecoder().decode(new Uint8Array(bytes.filter((b) => b !== 0)));
+    result += chunk;
+  }
+  return result.replace(/\0/g, "").trim();
+}
+
+async function fetchMarketTextFromLogs(factoryAddr: string): Promise<Record<number, MarketText>> {
+  try {
+    const res = await fetch(aztecConfig.pxeUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1,
+        method: "node_getPublicLogs",
+        params: [{ contractAddress: factoryAddr }],
+      }),
+    });
+    const json = (await res.json()) as { result?: { logs: Array<{ log: { fields?: string[]; data?: string } }> } };
+    const logs = json.result?.logs ?? [];
+    const textMap: Record<number, MarketText> = {};
+
+    for (const entry of logs) {
+      try {
+        // Log data is an array of hex field strings
+        const raw = (entry.log as unknown as { fields?: string[] }).fields;
+        if (!raw || raw.length < 4) continue;
+        const fields = raw.map((h: string) => BigInt(h));
+        // Layout: [market_id, q0, q1, c0, c1, s0, end_date, creator]
+        const marketId = Number(fields[0]);
+        if (!marketId || marketId <= 0) continue;
+        textMap[marketId] = {
+          question: fieldsToString(fields.slice(1, 3)),
+          criteria: fieldsToString(fields.slice(3, 5)),
+          source: fieldsToString(fields.slice(5, 7)),
+        };
+      } catch { /* skip malformed log */ }
+    }
+    return textMap;
+  } catch {
+    return {};
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Core: fetch all market data from public storage (no wallet needed)
+// ---------------------------------------------------------------------------
+async function fetchAllMarketsFromChain(factoryAddr: string): Promise<Market[]> {
+  const nextIdRaw = await readSlot(factoryAddr, toHex64(MF_SLOTS.next_market_id));
+  const nextId = Number(nextIdRaw);
+  if (nextId <= 1) return [];
+
+  // Fetch text from public logs in parallel with storage reads
+  const [textMap, ...marketData] = await Promise.all([
+    fetchMarketTextFromLogs(factoryAddr),
+    ...Array.from({ length: nextId - 1 }, (_, i) => i + 1).map(async (id) => {
+      const mid = BigInt(id);
+      try {
+        const [qSlot, cSlot, sSlot, crSlot, edSlot, bSlot] = await Promise.all([
+          mapSlot(MF_SLOTS.market_question_hash, mid),
+          mapSlot(MF_SLOTS.market_criteria_hash, mid),
+          mapSlot(MF_SLOTS.market_source_hash, mid),
+          mapSlot(MF_SLOTS.market_creator, mid),
+          mapSlot(MF_SLOTS.market_end_date, mid),
+          mapSlot(MF_SLOTS.market_bond, mid),
+        ]);
+
+        const [questionHash, criteriaHash, sourceHash, creatorRaw, endDateRaw, bondRaw] = await Promise.all([
+          readSlot(factoryAddr, qSlot),
+          readSlot(factoryAddr, cSlot),
+          readSlot(factoryAddr, sSlot),
+          readSlot(factoryAddr, crSlot),
+          readSlot(factoryAddr, edSlot),
+          readSlot(factoryAddr, bSlot),
+        ]);
+
+        if (questionHash === 0n && creatorRaw === 0n) return null;
+
+        const endSec = Number(endDateRaw);
+        const now = Math.floor(Date.now() / 1000);
+
+        return {
+          marketId: id,
+          questionHash: toHex64(questionHash),
+          criteriaHash: toHex64(criteriaHash),
+          sourceHash: toHex64(sourceHash),
+          creator: toHex64(creatorRaw),
+          endDate: endSec,
+          bond: Number(bondRaw),
+          status: endSec > now ? "active" : "resolving",
+          createdAt: new Date().toISOString(),
+        } satisfies Market;
+      } catch (err) {
+        console.warn(`[useMarkets] Market ${id}: storage read failed`, err);
+        return null;
+      }
+    }),
+  ]);
+
+  const markets = marketData.filter((m): m is Market => m !== null);
+
+  // Enrich with text from public logs
+  for (const m of markets) {
+    const text = (textMap as Record<number, MarketText>)[m.marketId];
+    if (text?.question) m.question = text.question;
+    if (text?.criteria) m.criteria = text.criteria;
+    if (text?.source) m.source = text.source;
+  }
+
+  return markets;
+}
+
+// ---------------------------------------------------------------------------
+// Hook: useMarkets — wallet-free market listing
+// ---------------------------------------------------------------------------
 export function useMarkets(_params?: { status?: string; page?: number; limit?: number }) {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { wallet, aztecNode } = useWalletContext();
 
   const fetchMarkets = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    if (!wallet || !aztecNode) {
+    const factoryAddr = aztecConfig.contracts.marketFactory;
+    if (!factoryAddr) {
       setMarkets([]);
       setTotal(0);
       setLoading(false);
@@ -40,83 +226,24 @@ export function useMarkets(_params?: { status?: string; page?: number; limit?: n
     }
 
     try {
-      const factoryAddr = aztecConfig.contracts.marketFactory;
-      if (!factoryAddr) {
-        setMarkets([]);
-        setTotal(0);
-        setLoading(false);
-        return;
-      }
-
-      const artifact = getArtifact(factoryAddr);
-      const address = AztecAddress.fromString(factoryAddr);
-      await ensureContractRegisteredWithPXE(wallet, aztecNode, factoryAddr, artifact);
-      const contract = Contract.at(address, artifact, wallet);
-
-      const nextIdRaw = await contract.methods.get_next_market_id().simulate();
-      const nextId = Number(fieldLikeToBigInt(unwrapSimulate(nextIdRaw)));
-      if (nextId <= 1) {
-        setMarkets([]);
-        setTotal(0);
-        setLoading(false);
-        return;
-      }
-
-      const results: Market[] = [];
-      for (let id = 1; id < nextId; id++) {
-        try {
-          const infoRaw = await contract.methods.get_market_info(id).simulate();
-          const info = unwrapSimulate(infoRaw) as unknown;
-          if (!info) continue;
-
-          const raw = Array.isArray(info)
-            ? info
-            : typeof info === "object"
-              ? Object.values(info as object)
-              : [];
-
-          const questionHash = raw[0] != null ? fieldLikeToBigInt(raw[0]) : undefined;
-          const criteriaHash = raw[1] != null ? fieldLikeToBigInt(raw[1]) : undefined;
-          const sourceHash = raw[2] != null ? fieldLikeToBigInt(raw[2]) : undefined;
-          const creator = raw[3] as { toString(): string } | undefined;
-          const endDate = raw[4] != null ? fieldLikeToBigInt(raw[4]) : undefined;
-          const bond = raw[5] != null ? fieldLikeToBigInt(raw[5]) : undefined;
-
-          if (questionHash == null || creator == null) continue;
-
-          const qHash = `0x${questionHash.toString(16).padStart(64, "0")}`;
-          const endSec = endDate != null ? Number(endDate) : 0;
-          results.push({
-            marketId: id,
-            questionHash: qHash,
-            criteriaHash: criteriaHash != null ? `0x${criteriaHash.toString(16).padStart(64, "0")}` : "0x0",
-            sourceHash: sourceHash != null ? `0x${sourceHash.toString(16).padStart(64, "0")}` : "0x0",
-            creator: creator.toString(),
-            endDate: endSec,
-            bond: bond != null ? Number(bond) : 0,
-            status: endSec * 1000 > Date.now() ? "active" : "resolving",
-            createdAt: new Date().toISOString(),
-            question: KNOWN_QUESTIONS[qHash],
-          });
-        } catch (err) {
-          console.warn(`[useMarkets] Market ${id}: failed to read from chain`, err);
-        }
-      }
-
-      setMarkets(results);
-      setTotal(results.length);
+      const result = await fetchAllMarketsFromChain(factoryAddr);
+      setMarkets(result);
+      setTotal(result.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [wallet, aztecNode]);
+  }, []);
 
   useEffect(() => { fetchMarkets(); }, [fetchMarkets]);
 
   return { markets, total, loading, error, refetch: fetchMarkets };
 }
 
+// ---------------------------------------------------------------------------
+// Hook: useMarketDetail — wallet-optional (tries storage read first)
+// ---------------------------------------------------------------------------
 export function useMarketDetail(marketId: number | null) {
   const [market, setMarket] = useState<MarketDetail | null>(null);
   const [loading, setLoading] = useState(false);
@@ -124,7 +251,7 @@ export function useMarketDetail(marketId: number | null) {
   const { wallet, aztecNode } = useWalletContext();
 
   useEffect(() => {
-    if (marketId === null || !wallet || !aztecNode) return;
+    if (marketId === null) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -133,65 +260,81 @@ export function useMarketDetail(marketId: number | null) {
       try {
         const factoryAddr = aztecConfig.contracts.marketFactory;
         const ammAddr = aztecConfig.contracts.amm;
-        if (!factoryAddr || !ammAddr) throw new Error("Contract addresses not configured.");
+        if (!factoryAddr) throw new Error("Contract addresses not configured.");
 
-        const factoryArtifact = getArtifact(factoryAddr);
-        const ammArtifact = getArtifact(ammAddr);
-        const factoryAddress = AztecAddress.fromString(factoryAddr);
-        const ammAddress = AztecAddress.fromString(ammAddr);
-
-        await ensureContractRegisteredWithPXE(wallet, aztecNode, factoryAddr, factoryArtifact);
-        await ensureContractRegisteredWithPXE(wallet, aztecNode, ammAddr, ammArtifact);
-
-        const factory = Contract.at(factoryAddress, factoryArtifact, wallet);
-        const amm = Contract.at(ammAddress, ammArtifact, wallet);
         const mid = BigInt(marketId);
 
-        const infoRaw = await factory.methods.get_market_info(mid).simulate();
-        const info = unwrapSimulate(infoRaw) as unknown;
-        const raw = Array.isArray(info)
-          ? info
-          : info != null && typeof info === "object"
-            ? Object.values(info as object)
-            : [];
+        const [qSlot, cSlot, sSlot, crSlot, edSlot, bSlot] = await Promise.all([
+          mapSlot(MF_SLOTS.market_question_hash, mid),
+          mapSlot(MF_SLOTS.market_criteria_hash, mid),
+          mapSlot(MF_SLOTS.market_source_hash, mid),
+          mapSlot(MF_SLOTS.market_creator, mid),
+          mapSlot(MF_SLOTS.market_end_date, mid),
+          mapSlot(MF_SLOTS.market_bond, mid),
+        ]);
 
-        const questionHash = raw[0] as bigint | undefined;
-        const criteriaHash = raw[1] as bigint | undefined;
-        const sourceHash = raw[2] as bigint | undefined;
-        const creator = raw[3] as { toString(): string } | undefined;
-        const endDate = raw[4] as bigint | undefined;
-        const bond = raw[5] as bigint | undefined;
-        if (questionHash == null || creator == null) throw new Error("Market not found.");
+        const [[questionHash, criteriaHash, sourceHash, creatorRaw, endDateRaw, bondRaw], textMap] =
+          await Promise.all([
+            Promise.all([
+              readSlot(factoryAddr, qSlot),
+              readSlot(factoryAddr, cSlot),
+              readSlot(factoryAddr, sSlot),
+              readSlot(factoryAddr, crSlot),
+              readSlot(factoryAddr, edSlot),
+              readSlot(factoryAddr, bSlot),
+            ]),
+            fetchMarketTextFromLogs(factoryAddr),
+          ]);
 
-        const qHash = `0x${questionHash.toString(16).padStart(64, "0")}`;
-        const yesRaw = await amm.methods.get_price_yes(mid).simulate();
-        const noRaw = await amm.methods.get_price_no(mid).simulate();
-        const yesPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
-        const noPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
+        if (questionHash === 0n) throw new Error("Market not found.");
 
+        const endSec = Number(endDateRaw);
+        const now = Math.floor(Date.now() / 1000);
+        const text = textMap[marketId];
+
+        // Fetch AMM prices — requires wallet (utility call)
+        let yesPrice = 0.5;
+        let noPrice = 0.5;
         let liquidity = 0;
-        try {
-          const resRaw = await amm.methods.get_reserves(mid).simulate();
-          const tup = unwrapSimulate(resRaw) as unknown;
-          const pair = Array.isArray(tup) ? tup : tup != null && typeof tup === "object" ? Object.values(tup as object) : [];
-          const ry = pair[0] != null ? fieldLikeToBigInt(pair[0]) : 0n;
-          const rn = pair[1] != null ? fieldLikeToBigInt(pair[1]) : 0n;
-          liquidity = Number(ry + rn);
-        } catch { /* optional */ }
 
-        const endSec = endDate != null ? Number(endDate) : 0;
+        if (wallet && aztecNode && ammAddr) {
+          try {
+            const ammArtifact = getArtifact(ammAddr);
+            const amm = Contract.at(AztecAddress.fromString(ammAddr), ammArtifact, wallet);
+            await ensureContractRegisteredWithPXE(wallet, aztecNode, ammAddr, ammArtifact);
+
+            const [yesRaw, noRaw] = await Promise.all([
+              amm.methods.get_price_yes(mid).simulate(),
+              amm.methods.get_price_no(mid).simulate(),
+            ]);
+            yesPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
+            noPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
+
+            const resRaw = await amm.methods.get_reserves(mid).simulate();
+            const tup = unwrapSimulate(resRaw) as unknown;
+            const pair = Array.isArray(tup) ? tup : tup != null && typeof tup === "object" ? Object.values(tup as object) : [];
+            const ry = pair[0] != null ? fieldLikeToBigInt(pair[0]) : 0n;
+            const rn = pair[1] != null ? fieldLikeToBigInt(pair[1]) : 0n;
+            liquidity = Number(ry + rn);
+          } catch (e) {
+            console.warn("[useMarketDetail] AMM price fetch failed (wallet required):", e);
+          }
+        }
+
         if (!cancelled) {
           setMarket({
             marketId,
-            questionHash: qHash,
-            criteriaHash: criteriaHash != null ? `0x${criteriaHash.toString(16).padStart(64, "0")}` : "0x0",
-            sourceHash: sourceHash != null ? `0x${sourceHash.toString(16).padStart(64, "0")}` : "0x0",
-            creator: creator.toString(),
+            questionHash: toHex64(questionHash),
+            criteriaHash: toHex64(criteriaHash),
+            sourceHash: toHex64(sourceHash),
+            creator: toHex64(creatorRaw),
             endDate: endSec,
-            bond: bond != null ? Number(bond) : 0,
-            status: endSec * 1000 > Date.now() ? "active" : "resolving",
+            bond: Number(bondRaw),
+            status: endSec > now ? "active" : "resolving",
             createdAt: new Date().toISOString(),
-            question: KNOWN_QUESTIONS[qHash],
+            question: text?.question,
+            criteria: text?.criteria,
+            source: text?.source,
             yesPrice,
             noPrice,
             liquidity,
@@ -199,9 +342,7 @@ export function useMarketDetail(marketId: number | null) {
           });
         }
       } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-        }
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -213,6 +354,9 @@ export function useMarketDetail(marketId: number | null) {
   return { market, loading, error };
 }
 
+// ---------------------------------------------------------------------------
+// Hook: useMarketPrices — snapshot prices from AMM (wallet required)
+// ---------------------------------------------------------------------------
 export function useMarketPrices(marketId: number | null) {
   const [prices, setPrices] = useState<PricePoint[]>([]);
   const { wallet, aztecNode } = useWalletContext();
@@ -230,8 +374,10 @@ export function useMarketPrices(marketId: number | null) {
         const amm = Contract.at(AztecAddress.fromString(ammAddr), ammArtifact, wallet);
         const mid = BigInt(marketId);
 
-        const yesRaw = await amm.methods.get_price_yes(mid).simulate();
-        const noRaw = await amm.methods.get_price_no(mid).simulate();
+        const [yesRaw, noRaw] = await Promise.all([
+          amm.methods.get_price_yes(mid).simulate(),
+          amm.methods.get_price_no(mid).simulate(),
+        ]);
         const yes = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
         const no = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
 
@@ -246,12 +392,7 @@ export function useMarketPrices(marketId: number | null) {
         } catch { /* optional */ }
 
         if (!cancelled) {
-          setPrices([{
-            timestamp: new Date().toISOString(),
-            yesPrice: yes,
-            noPrice: no,
-            liquidity,
-          }]);
+          setPrices([{ timestamp: new Date().toISOString(), yesPrice: yes, noPrice: no, liquidity }]);
         }
       } catch (err) {
         console.warn("[useMarketPrices] chain read failed:", err);

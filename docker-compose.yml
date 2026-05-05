@@ -1,47 +1,4 @@
 services:
-  # ── PostgreSQL ──────────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: honkers-postgres
-    ports:
-      - "5432:5432"
-    environment:
-      POSTGRES_USER: honkers
-      POSTGRES_PASSWORD: honkers
-      POSTGRES_DB: honkers
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honkers"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-  # ── Indexer (REST API + block poller) ───────────────────────────────────────
-  indexer:
-    build:
-      context: ./indexer
-      dockerfile: Dockerfile
-    container_name: honkers-indexer
-    ports:
-      - "3001:3001"
-    environment:
-      DATABASE_URL: postgresql://honkers:honkers@postgres:5432/honkers
-      AZTEC_RPC_URL: https://rpc.testnet.aztec-labs.com
-      INDEXER_PORT: "3001"
-      POLL_INTERVAL_MS: "30000"
-      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
-      MARKET_FACTORY_ADDRESS: ${MARKET_FACTORY_ADDRESS:-}
-      AMM_ADDRESS: ${AMM_ADDRESS:-}
-      ORACLE_ADDRESS: ${ORACLE_ADDRESS:-}
-      TEST_TOKEN_ADDRESS: ${TEST_TOKEN_ADDRESS:-}
-      INDEXER_METADATA_SECRET: ${INDEXER_METADATA_SECRET:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # ── Keeper bot ──────────────────────────────────────────────────────────────
   keeper:
     build:
@@ -49,17 +6,14 @@ services:
       dockerfile: Dockerfile
     container_name: honkers-keeper
     environment:
-      DATABASE_URL: postgresql://honkers:honkers@postgres:5432/honkers
       AZTEC_RPC_URL: https://rpc.testnet.aztec-labs.com
       KEEPER_POLL_INTERVAL_MS: "600000"
       KEEPER_HEALTH_INTERVAL_MS: "60000"
       ORACLE_ADDRESS: ${ORACLE_ADDRESS:-}
+      MARKET_FACTORY_ADDRESS: ${MARKET_FACTORY_ADDRESS:-}
       AMM_ADDRESS: ${AMM_ADDRESS:-}
       ADMIN_PRIVATE_KEY: ${ADMIN_PRIVATE_KEY:-}
       KEEPER_AUTO_VOID_MODE: ${KEEPER_AUTO_VOID_MODE:-alert_only}
-    depends_on:
-      postgres:
-        condition: service_healthy
     restart: unless-stopped
 
   # ── Frontend (Vite dev server) ──────────────────────────────────────────────
@@ -72,7 +26,6 @@ services:
       - "5173:5173"
     environment:
       AZTEC_SANDBOX_URL: https://rpc.testnet.aztec-labs.com
-      INDEXER_URL: http://indexer:3001
       # Contract addresses — sourced from .env at repo root
       VITE_MARKET_FACTORY_ADDRESS: ${MARKET_FACTORY_ADDRESS:-}
       VITE_AMM_ADDRESS: ${AMM_ADDRESS:-}
@@ -83,10 +36,4 @@ services:
       VITE_ADMIN_ADDRESSES: ${VITE_ADMIN_ADDRESSES:-${ADMIN_ADDRESS:-}}
       VITE_SPONSORED_FPC_ADDRESS: ${SPONSORED_FPC_ADDRESS:-}
       VITE_FEE_RECIPIENT_ADDRESS: ${ADMIN_ADDRESS:-}
-    depends_on:
-      indexer:
-        condition: service_started
     restart: unless-stopped
-
-volumes:
-  pgdata:

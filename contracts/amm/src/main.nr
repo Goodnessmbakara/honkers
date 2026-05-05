@@ -43,6 +43,8 @@ pub contract AMM {
 
     #[external("public")]
     fn initialize_market(market_id: Field, initial_liquidity: Field, end_date: Field) {
+        let admin = self.storage.admin.read();
+        assert(self.msg_sender() == admin, "Only admin can initialize market");
         let existing = self.storage.invariant_k.at(market_id).read();
         assert(existing == 0, "Market already initialised");
 

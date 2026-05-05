@@ -46,15 +46,18 @@ export function TxStatus({ status, txHash, txHashes, error, onRetry }: Props) {
           <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)", marginTop: "var(--space-1)" }}>
             {txHashes.map((t) => (
               <span key={t.label} className="mono" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                {t.label}: {shorten(t.hash)}
+                {t.label}:{" "}
+                <a href={`https://testnet.aztecscan.xyz/tx-effects/${t.hash}`} target="_blank" rel="noopener noreferrer" style={{ color: "inherit", textDecoration: "underline" }}>
+                  {shorten(t.hash)}
+                </a>
               </span>
             ))}
           </div>
         ) : null}
         {txHash && !txHashes?.length ? (
-          <span className="mono" style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+          <a href={`https://testnet.aztecscan.xyz/tx-effects/${txHash}`} target="_blank" rel="noopener noreferrer" className="mono" style={{ fontSize: "0.75rem", color: "var(--text-muted)", textDecoration: "underline" }}>
             {shorten(txHash)}
-          </span>
+          </a>
         ) : null}
         {error && (
           <span style={{ fontSize: "0.8125rem", color: "var(--negative)" }}>{error}</span>
