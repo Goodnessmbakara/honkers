@@ -378,5 +378,5 @@ No external audit has been conducted. This document reflects an internal AI-assi
 | AMM | `0x215e27e2f7fa23f68490a4097470664cce3cb5c5873995eaed4c261af578fb48` |
 | Oracle | `0x14d5dfe1305071d6fc77de04698d323a7347339a950fe8571f24b4003511f449` |
 | PrivateVault | `0x11dd43c8764811ed0b87e36fce7aecb58e465bc10df55cd49e0ae9004c9b2c7c` |
-| MarketFactory | `0x0cef835560bbd66a032be62676ee87aeb339ebc67b9d534a75a1612d2bf241e6` |
+| MarketFactory | `0x0fdce9f2c23d2658c0122dc85f91cff627215b769a31d9886fb2884f9c543b65` |
 | SponsoredFPC | `0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257` |

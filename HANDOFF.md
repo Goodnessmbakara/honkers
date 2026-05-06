@@ -10,7 +10,7 @@ Last updated: 2026-05-05
 - **Network:** Aztec **testnet** (`https://rpc.testnet.aztec-labs.com`, Sepolia-backed). All 5 contracts deployed 2026-05-04 after testnet reset. Addresses in `.env` and `frontend/.env` are current.
 - **Wallet:** **Azguard** Chrome extension wallet (replaces old in-browser PXE). Users connect via Azguard; all signing and proving happens inside the extension. No WASM proving in the browser. Session persists across page refreshes automatically.
 - **Markets page:** Loads all markets without a connected wallet — reads public storage maps directly from the Aztec node via `node_getPublicStorageAt`. No indexer, no wallet required.
-- **Market question text:** Currently markets show "Market #N" fallback. Question text will be readable once `MarketFactory` is updated to emit public logs on `create_market` and redeployed (T2→T4 on the kanban board — pending).
+- **Market question text:** Readable from chain via `node_getPublicLogs`. `MarketFactory.create_market` now emits a `MarketCreated` public log with question/criteria/source packed as Fields. New markets show full text immediately. Markets #1 and #2 predate this and show "Market #1/2".
 - **Deployment:** Contracts deploy to testnet via **`aztec-wallet` CLI** (native prover). The TypeScript `deploy.ts` script only works against a local sandbox with `proverEnabled = false` — it produces invalid proofs on testnet.
 - **Create market** — `MarketFactory.create_market` enforces **bond > 0** and **end date in the future**. Whitelist gate removed from source.
 - **Faucet** — TestToken mint from the Faucet page works for connected wallets.
@@ -28,7 +28,7 @@ Last updated: 2026-05-05
 | AMM | `0x215e27e2f7fa23f68490a4097470664cce3cb5c5873995eaed4c261af578fb48` |
 | Oracle | `0x14d5dfe1305071d6fc77de04698d323a7347339a950fe8571f24b4003511f449` |
 | PrivateVault | `0x11dd43c8764811ed0b87e36fce7aecb58e465bc10df55cd49e0ae9004c9b2c7c` |
-| MarketFactory | `0x0cef835560bbd66a032be62676ee87aeb339ebc67b9d534a75a1612d2bf241e6` |
+| MarketFactory | `0x0fdce9f2c23d2658c0122dc85f91cff627215b769a31d9886fb2884f9c543b65` |
 | SponsoredFPC | `0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257` |
 
 Admin secret key: `0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281`
@@ -146,40 +146,37 @@ Fix order before any real-value use: C-2 → C-1 → C-7 → C-3 → C-4 → C-5
 
 ## What's Left (by priority)
 
-### P0 — Add public log emission to MarketFactory + redeploy (NEXT)
+### P0 — ✅ DONE: MarketFactory emits public logs + redeployed (2026-05-06)
 
-This is the top priority. Add `emit_public_log` to `create_market` in `contracts/market_factory/src/main.nr` so question/criteria/source text is readable from `node_getPublicLogs`. The frontend's `useMarkets.ts` already calls `node_getPublicLogs` and parses the expected field layout — it just returns empty until the contract emits.
+`MarketFactory.create_market` now accepts 7 extra Field params (question/criteria/source packed as 31-byte chunks) and emits a `MarketCreated` public log. The frontend reads it via `node_getPublicLogs`.
 
-**Log layout expected by frontend:**
+New address: `0x0fdce9f2c23d2658c0122dc85f91cff627215b769a31d9886fb2884f9c543b65`
+
+**Build process for future contract changes (no `aztec` CLI needed):**
+```bash
+# 1. Compile with nargo
+cd contracts && /Users/abba/.nargo/bin/nargo compile --package market_factory
+
+# 2. AVM transpilation (must use bb matching the nargo/aztec version — v4.1.3)
+BB=tests/integration/node_modules/.pnpm/@aztec+bb.js@4.1.3/node_modules/@aztec/bb.js/build/arm64-macos/bb
+$BB aztec_process -i contracts/target/market_factory-MarketFactory.json
+
+# 3. Strip internal prefix
+python3 -c "
+import json
+path='contracts/target/market_factory-MarketFactory.json'
+d=json.load(open(path))
+for fn in d['functions']:
+    fn['name'] = fn['name'].replace('__aztec_nr_internals__', '')
+json.dump(d, open(path,'w'), indent=2)
+"
+
+# 4. Copy to @-free path and deploy
+cp contracts/target/market_factory-MarketFactory.json /tmp/aztec-artifacts/MarketFactory.json
+aztec-wallet deploy /tmp/aztec-artifacts/MarketFactory.json --from accounts:admin ...
 ```
-fields[0] = market_id
-fields[1..2] = question (2 × 31-byte packed Field)
-fields[3..4] = criteria (2 × 31-byte packed Field)
-fields[5..6] = source   (2 × 31-byte packed Field)
-```
 
-**Noir pattern:**
-```rust
-use aztec::oracle::avm::emit_public_log;
-
-// In create_market(), after writing storage:
-emit_public_log([
-    market_id,
-    // pack question bytes into Fields (31 bytes each)
-    question_field_0, question_field_1,
-    criteria_field_0, criteria_field_1,
-    source_field_0,   source_field_1,
-]);
-```
-
-**After contract change:**
-1. `cd contracts && aztec build`
-2. Copy artifacts to `/tmp/aztec-artifacts/`
-3. Redeploy MarketFactory via `aztec-wallet` CLI
-4. Update `MARKET_FACTORY_ADDRESS` in `.env` + `frontend/.env`
-5. `docker compose up -d --build frontend`
-
-Note: markets #1 and #2 were created before this change — they will still show "Market #1/2". Create new markets after redeployment to verify the full flow.
+Note: markets #1 and #2 predate the log emission — they still show "Market #1/2".
 
 ### P0 — End-to-end smoke test with Azguard
 

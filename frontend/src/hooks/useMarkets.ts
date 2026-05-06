@@ -110,23 +110,43 @@ async function fetchMarketTextFromLogs(factoryAddr: string): Promise<Record<numb
         params: [{ contractAddress: factoryAddr }],
       }),
     });
-    const json = (await res.json()) as { result?: { logs: Array<{ log: { fields?: string[]; data?: string } }> } };
+    const json = (await res.json()) as { result?: { logs: Array<unknown> } };
     const logs = json.result?.logs ?? [];
     const textMap: Record<number, MarketText> = {};
 
     for (const entry of logs) {
       try {
-        // Log data is an array of hex field strings
-        const raw = (entry.log as unknown as { fields?: string[] }).fields;
-        if (!raw || raw.length < 4) continue;
-        const fields = raw.map((h: string) => BigInt(h));
-        // Layout: [market_id, q0, q1, c0, c1, s0, end_date, creator]
-        const marketId = Number(fields[0]);
-        if (!marketId || marketId <= 0) continue;
+        // The Aztec node returns logs with emitted fields accessible via
+        // log.log.fields (array of hex strings) or log.log.getEmittedFields().
+        // MarketCreated struct serializes to 10 Fields:
+        // [market_id, q0, q1, q2, c0, c1, s0, s1, end_date, creator]
+        const logObj = (entry as { log?: unknown }).log ?? entry;
+        let rawFields: string[] | undefined;
+
+        if (Array.isArray((logObj as { fields?: string[] }).fields)) {
+          rawFields = (logObj as { fields: string[] }).fields;
+        } else if (typeof (logObj as { data?: string }).data === "string") {
+          // packed hex blob: split into 32-byte chunks
+          const hex = (logObj as { data: string }).data.replace(/^0x/, "");
+          rawFields = [];
+          for (let i = 0; i < hex.length; i += 64) {
+            rawFields.push("0x" + hex.slice(i, i + 64).padStart(64, "0"));
+          }
+        }
+
+        if (!rawFields || rawFields.length < 10) continue;
+        const fields = rawFields.map((h: string) => BigInt(h));
+
+        // The Serialize derive prepends an event tag field (eventSelector hash).
+        // Skip leading tag if present (fields[0] would be huge, not a small market_id).
+        const offset = fields[0] > 1000000n ? 1 : 0;
+        const marketId = Number(fields[offset]);
+        if (!marketId || marketId <= 0 || marketId > 10000) continue;
+
         textMap[marketId] = {
-          question: fieldsToString(fields.slice(1, 3)),
-          criteria: fieldsToString(fields.slice(3, 5)),
-          source: fieldsToString(fields.slice(5, 7)),
+          question: fieldsToString([fields[offset + 1], fields[offset + 2], fields[offset + 3]]),
+          criteria: fieldsToString([fields[offset + 4], fields[offset + 5]]),
+          source: fieldsToString([fields[offset + 6], fields[offset + 7]]),
         };
       } catch { /* skip malformed log */ }
     }

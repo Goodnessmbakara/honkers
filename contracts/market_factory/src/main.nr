@@ -5,9 +5,32 @@ use aztec::macros::aztec;
 pub contract MarketFactory {
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
-        protocol::{address::AztecAddress, traits::ToField},
+        protocol::{address::AztecAddress, traits::{Serialize, ToField}},
         state_vars::{Map, PublicMutable},
     };
+
+    // ---------------------------------------------------------------------------
+    // Public event emitted on every create_market call.
+    // Frontend reads this via node_getPublicLogs to display question text.
+    //
+    // Text fields are pre-packed by the caller: each Field holds up to 31 UTF-8
+    // bytes, big-endian. question uses 3 fields (93 bytes), criteria 2 (62 bytes),
+    // source 2 (62 bytes). Empty trailing fields are zero.
+    // ---------------------------------------------------------------------------
+    #[abi(events)]
+    #[derive(Serialize)]
+    struct MarketCreated {
+        market_id: Field,
+        question_0: Field,
+        question_1: Field,
+        question_2: Field,
+        criteria_0: Field,
+        criteria_1: Field,
+        source_0: Field,
+        source_1: Field,
+        end_date: Field,
+        creator: Field,
+    }
 
     #[storage]
     struct Storage<Context> {
@@ -61,6 +84,17 @@ pub contract MarketFactory {
         self.storage.whitelist.at(key).write(0);
     }
 
+    // ---------------------------------------------------------------------------
+    // create_market
+    //
+    // Hash params (question_hash etc.) are SHA-256 truncated to 31 bytes,
+    // computed client-side and stored on-chain for integrity.
+    //
+    // Text params (question_0..2, criteria_0..1, source_0..1) are the raw UTF-8
+    // bytes packed into Fields (31 bytes each, big-endian). They are NOT stored
+    // on-chain - only emitted as a public log so the frontend can read them back.
+    // Unused trailing bytes in each Field should be zero-padded by the caller.
+    // ---------------------------------------------------------------------------
     #[external("public")]
     fn create_market(
         question_hash: Field,
@@ -68,6 +102,13 @@ pub contract MarketFactory {
         source_hash: Field,
         end_date: Field,
         bond_amount: Field,
+        question_0: Field,
+        question_1: Field,
+        question_2: Field,
+        criteria_0: Field,
+        criteria_1: Field,
+        source_0: Field,
+        source_1: Field,
     ) -> Field {
         let creator = self.msg_sender();
 
@@ -83,6 +124,19 @@ pub contract MarketFactory {
         self.storage.market_creator.at(market_id).write(creator);
         self.storage.market_end_date.at(market_id).write(end_date);
         self.storage.market_bond.at(market_id).write(bond_amount);
+
+        self.context.emit_public_log(MarketCreated {
+            market_id,
+            question_0,
+            question_1,
+            question_2,
+            criteria_0,
+            criteria_1,
+            source_0,
+            source_1,
+            end_date,
+            creator: creator.to_field(),
+        });
 
         market_id
     }
