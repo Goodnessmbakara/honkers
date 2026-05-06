@@ -3,7 +3,7 @@
 Date: 2026-05-06
 Scope: smart contract fixes for findings in SECURITY.md, aligned to Aztec v4.2.0 contract behavior.
 
-## 1) What I reviewed
+## 1) Reviewed files & resources
 
 - Contract sources under contracts/:
   - contracts/private_vault/src/main.nr
