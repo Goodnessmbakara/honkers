@@ -140,7 +140,7 @@ Fix order before any real-value use: C-2 → C-1 → C-7 → C-3 → C-4 → C-5
 
 - **B5** — "Failed to execute 'get' on IDBObjectStore: The transaction has finished" on retry after stale DB nuke — intermittent.
 - **B17** — Admin account shows "NOT FOUND" on `node_getContract` RPC — cosmetic.
-- **B22** — Markets #1 and #2 show "Market #1" / "Market #2" (no question text) — will be fixed once MarketFactory emits public logs and is redeployed.
+- **B22** — Markets #1 and #2 show "Market #1" / "Market #2" — expected, they were created before the contract emitted public logs. All markets created after 2026-05-06 show full question text from chain.
 
 ---
 

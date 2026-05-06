@@ -298,7 +298,7 @@ All amounts use `Field` rather than `u64` / `u128`. Casting between `Field` and 
 
 **Severity:** Architecture (required before mainnet)  
 **Affects:** MarketFactory, AMM, Oracle, PrivateVault, TestToken  
-**Status:** Partially addressed — indexer deleted, frontend reads `node_getPublicLogs`. Contract emission pending redeployment.
+**Status:** Resolved for MarketFactory (2026-05-06). Indexer deleted. `MarketFactory.create_market` now emits `MarketCreated` public log with packed question/criteria/source Fields. Frontend reads via `node_getPublicLogs`. Remaining contracts (AMM, Oracle, PrivateVault) still emit no logs — add before mainnet.
 
 None of the five contracts call `emit_public_log()` for any state-changing action.
 
