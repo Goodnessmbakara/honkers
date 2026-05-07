@@ -58,7 +58,7 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, f
       {/* Amount input */}
       <div>
         <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", marginBottom: "var(--space-1)", display: "block" }}>
-          Amount (USDC)
+          Amount (USDh)
         </label>
         <input
           type="number"
@@ -82,7 +82,7 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, f
             onClick={onFaucet}
             disabled={faucetLoading}
           >
-            {faucetLoading ? "Requesting tokens…" : "⚡ Get test USDC"}
+            {faucetLoading ? "Requesting tokens…" : "⚡ Get test USDh"}
           </button>
         )}
       </div>

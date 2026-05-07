@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// SCR-FAUCET (S07) — Request testnet USDC tokens with fair-use rules
+// SCR-FAUCET (S07) — Request testnet USDh tokens with fair-use rules
 // (FR-F-1, FR-F-2)
 // ---------------------------------------------------------------------------
 
@@ -17,7 +17,7 @@ export function Faucet() {
     <div className="page" style={{ maxWidth: 480, margin: "0 auto" }}>
       <h1 style={{ marginBottom: "var(--space-2)" }}>Testnet faucet</h1>
       <p style={{ color: "var(--text-secondary)", marginBottom: "var(--space-6)", fontSize: "0.875rem" }}>
-        Request up to {maxAmount} testnet USDC. 1h cooldown between requests.
+        Request up to {maxAmount} testnet USDh. 1h cooldown between requests.
       </p>
 
       <div style={{ display: "flex", gap: "var(--space-3)", marginBottom: "var(--space-4)" }}>
@@ -39,7 +39,7 @@ export function Faucet() {
           }}
         >
           <Droplets size={16} />
-          {loading ? "Requesting…" : "Request USDC"}
+          {loading ? "Requesting…" : "Request USDh"}
         </button>
       </div>
 

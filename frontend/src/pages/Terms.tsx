@@ -14,7 +14,7 @@ export function Terms() {
         </p>
         <h2 style={{ color: "var(--text-primary)" }}>1. Testnet disclaimer</h2>
         <p>
-          All tokens (USDC) on this platform are testnet tokens with no monetary value.
+          All tokens (USDh) on this platform are testnet tokens with no monetary value.
           This is experimental software provided as-is with no warranty.
         </p>
         <h2 style={{ color: "var(--text-primary)" }}>2. Eligibility</h2>

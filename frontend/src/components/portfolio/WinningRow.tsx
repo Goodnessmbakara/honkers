@@ -41,7 +41,7 @@ export function WinningRow({ winning, onClaim, claiming }: Props) {
 
       <div style={{ textAlign: "right" }}>
         <div className="mono" style={{ color: "var(--positive)" }}>
-          +{net.toFixed(2)} USDC
+          +{net.toFixed(2)} USDh
         </div>
         <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
           {fee.toFixed(2)} fee (3%)

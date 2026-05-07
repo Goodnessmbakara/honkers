@@ -9,7 +9,7 @@ import { WalletConnect } from "../components/wallet/WalletConnect";
 const features = [
   { icon: Lock, label: "Private positions", desc: "Your trades are hidden in zero-knowledge notes — not even the sequencer knows your size." },
   { icon: TrendingUp, label: "Real markets", desc: "Prediction markets backed by on-chain AMM pricing. Every bet is auditable, no position is." },
-  { icon: Zap, label: "Instant faucet", desc: "Get test USDC in one click. No KYC, no bridge, no waiting." },
+  { icon: Zap, label: "Instant faucet", desc: "Get test USDh in one click. No KYC, no bridge, no waiting." },
 ];
 
 export function Landing() {

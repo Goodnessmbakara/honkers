@@ -1,12 +1,12 @@
 // ---------------------------------------------------------------------------
-// useFaucet — testnet USDC faucet request with fair-use enforcement (FR-F-1)
+// useFaucet — testnet USDh faucet request with fair-use enforcement (FR-F-1)
 // ---------------------------------------------------------------------------
 
 import { useCallback, useState } from "react";
 import { aztecConfig } from "../config/aztec";
 import { usePXE } from "./usePXE";
 
-const MAX_AMOUNT = 100; // testnet USDC
+const MAX_AMOUNT = 10000; // testnet USDh
 const COOLDOWN_KEY = "honkers:faucet-last";
 const COOLDOWN_MS = 3600 * 1000; // 1 hour
 

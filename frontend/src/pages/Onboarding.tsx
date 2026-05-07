@@ -15,7 +15,7 @@ export function Onboarding() {
   const steps = [
     { id: "connect", label: "Connect wallet", done: connected && !!address },
     { id: "backup", label: "Save secret key (Backup)", done: hasSecret && dismissedBackup },
-    { id: "faucet", label: "Get test USDC (Faucet)", done: false },
+    { id: "faucet", label: "Get test USDh (Faucet)", done: false },
     { id: "trade", label: "Open a market and trade", done: false },
   ];
 

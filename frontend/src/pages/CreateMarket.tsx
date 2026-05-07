@@ -75,7 +75,7 @@ export function CreateMarket() {
       const [s0, s1] = packStringToFields(source, 2);
 
       const endUnix = Math.floor(new Date(endDate).getTime() / 1000);
-      const bondAmount = Math.floor(Number(bond) * 1e6); // 6 decimal USDC
+      const bondAmount = Math.floor(Number(bond) * 1e6); // 6 decimal USDh
 
       const txHash = await simulateAndProve(
         aztecConfig.contracts.marketFactory,
@@ -166,7 +166,7 @@ export function CreateMarket() {
 
         <div>
           <label style={{ fontSize: "0.75rem", color: "var(--text-secondary)", display: "block", marginBottom: "var(--space-1)" }}>
-            Bond amount (USDC)
+            Bond amount (USDh)
           </label>
           <input
             type="number"

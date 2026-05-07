@@ -26,7 +26,7 @@ export function PendingClaimBanner({ winnings }: { winnings: WinningClaim[] }) {
     >
       <CircleCheck size={16} style={{ color: "var(--positive)" }} />
       <span style={{ color: "var(--positive)", fontWeight: 500, fontSize: "0.875rem" }}>
-        {unclaimed.length} winning{unclaimed.length > 1 ? "s" : ""} ready to claim — {total.toFixed(2)} USDC
+        {unclaimed.length} winning{unclaimed.length > 1 ? "s" : ""} ready to claim — {total.toFixed(2)} USDh
       </span>
     </div>
   );

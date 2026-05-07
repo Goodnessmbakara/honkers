@@ -93,7 +93,7 @@ export function MarketDetail() {
           <h3 style={{ fontSize: "0.875rem", color: "var(--text-muted)", marginBottom: "var(--space-2)" }}>
             Liquidity
           </h3>
-          <span className="mono">{(market.liquidity / 1e6).toFixed(2)} USDC</span>
+          <span className="mono">{(market.liquidity / 1e6).toFixed(2)} USDh</span>
         </div>
       </div>
 

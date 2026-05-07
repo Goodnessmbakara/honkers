@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// CMP-BALANCE-PRIVATE — Private USDC balance from PXE
+// CMP-BALANCE-PRIVATE — Private USDh balance from PXE
 // ---------------------------------------------------------------------------
 
 export function BalancePrivate({ amount, loading }: { amount: number; loading?: boolean }) {
@@ -16,7 +16,7 @@ export function BalancePrivate({ amount, loading }: { amount: number; loading?: 
     <div>
       <span style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>Private balance</span>
       <div style={{ fontSize: "2rem", fontFamily: "var(--font-display)", fontWeight: 700 }}>
-        {formatted} <span style={{ fontSize: "1rem", color: "var(--text-secondary)" }}>USDC</span>
+        {formatted} <span style={{ fontSize: "1rem", color: "var(--text-secondary)" }}>USDh</span>
       </div>
     </div>
   );
