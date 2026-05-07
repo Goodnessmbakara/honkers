@@ -169,13 +169,25 @@ export default defineConfig({
       'Cross-Origin-Resource-Policy': 'cross-origin',
     },
     proxy: {
-      // Proxy Aztec sandbox RPC to avoid CORS issues
+      // Proxy Aztec sandbox RPC to avoid CORS issues.
+      // The configure hook strips COEP/COOP from proxy responses — these headers
+      // are required for SharedArrayBuffer but block cross-origin proxy responses.
       '/rpc': {
         target: process.env.AZTEC_SANDBOX_URL || 'https://rpc.testnet.aztec-labs.com',
         changeOrigin: true,
         rewrite: (p) => {
           const rewritten = p.replace(/^\/rpc/, '');
           return rewritten.length === 0 ? '/' : rewritten;
+        },
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes) => {
+            // Remove COEP/CORP from upstream so the browser doesn't block it
+            delete proxyRes.headers['cross-origin-embedder-policy'];
+            delete proxyRes.headers['cross-origin-resource-policy'];
+            delete proxyRes.headers['cross-origin-opener-policy'];
+            // Ensure JSON responses are readable
+            proxyRes.headers['access-control-allow-origin'] = '*';
+          });
         },
       },
     },
