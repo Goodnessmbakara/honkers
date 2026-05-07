@@ -1,7 +1,8 @@
 // ---------------------------------------------------------------------------
-// usePortfolio — private USDC balance + positions from PXE, auto-claim logic
+// usePortfolio — USDh public balance + private positions from PXE
 // (FR-P-1 through FR-P-4)
 //
+// USDh balance is PUBLIC storage — read via balance_of utility call.
 // PrivateVault PrivateSet storage slots (codegen): collateral=8, shares=9, winnings=10.
 // ---------------------------------------------------------------------------
 
@@ -10,6 +11,38 @@ import type { Position, WinningClaim } from "../types";
 import { aztecConfig } from "../config/aztec";
 import { usePXE } from "./usePXE";
 import { Fr } from "@aztec/aztec.js/fields";
+
+const USDH_BALANCES_SLOT = 9n; // balances: Map<AztecAddress, PublicMutable<Field>> base slot (verified on-chain)
+const ZERO_HEX = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+/** Read USDh public balance directly from chain storage — no wallet needed. */
+async function fetchPublicBalance(ownerAddress: string): Promise<number> {
+  const usdhAddr = aztecConfig.contracts.usdh;
+  if (!usdhAddr || !ownerAddress) return 0;
+  try {
+    const { deriveStorageSlotInMap } = await import("@aztec/stdlib/hash");
+    const { Fr } = await import("@aztec/aztec.js/fields");
+    const { AztecAddress } = await import("@aztec/aztec.js/addresses");
+    const ownerField = AztecAddress.fromString(ownerAddress).toField();
+    const slot = await deriveStorageSlotInMap(new Fr(USDH_BALANCES_SLOT), { toField: () => ownerField });
+
+    const res = await fetch(aztecConfig.pxeUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0", id: 1,
+        method: "node_getPublicStorageAt",
+        params: ["latest", usdhAddr, slot.toString()],
+      }),
+    });
+    const json = (await res.json()) as { result?: string };
+    const raw = json.result;
+    if (!raw || raw === ZERO_HEX || raw === "0x0") return 0;
+    return Number(BigInt(raw));
+  } catch {
+    return 0;
+  }
+}
 
 const VAULT_COLLATERAL_SLOT = 8;
 const VAULT_SHARES_SLOT = 9;
@@ -29,9 +62,12 @@ export function usePortfolio(walletAddress: string | null) {
 
     setLoading(true);
     try {
+      // USDh is a public token — read balance from chain storage directly
+      const publicBalance = await fetchPublicBalance(walletAddress);
+      // Also check collateral notes in PrivateVault (deposited-but-not-traded funds)
       const collateralNotes = await getPrivateNotes(walletAddress, vault, VAULT_COLLATERAL_SLOT);
-      const totalBalance = collateralNotes.reduce((sum, n) => sum + Number(n.items[0] ?? 0n), 0);
-      setBalance(totalBalance);
+      const vaultBalance = collateralNotes.reduce((sum, n) => sum + Number(n.items[0] ?? 0n), 0);
+      setBalance(publicBalance + vaultBalance);
 
       const shareNotes = await getPrivateNotes(walletAddress, vault, VAULT_SHARES_SLOT);
       const pos: Position[] = shareNotes
