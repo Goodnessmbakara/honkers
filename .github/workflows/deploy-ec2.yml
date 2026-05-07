@@ -62,5 +62,6 @@ jobs:
           cd "${APP_DIR}"
           sudo docker compose up -d --build
           sudo docker compose ps
+          for i in $(seq 1 12); do curl -sf --max-time 5 http://localhost:5173 && break || sleep 5; done
           curl -I --max-time 20 http://localhost:5173
           EOF
