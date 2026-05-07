@@ -105,34 +105,43 @@ export function usePXE() {
         onStep?.("submitting");
         onStep?.("confirming");
 
-        // Azguard's sendTx returns the raw result (TxHash string/object), not a SentTx.
-        // Standard Aztec.js SentTx has .wait() that resolves to a TxReceipt with .txHash.
-        // Handle all three possible shapes:
-        let hash: string | undefined;
+        console.log("[usePXE] sentTx type:", typeof sentTx, "value:", sentTx);
 
-        if (sentTx && typeof sentTx === "object" && "wait" in sentTx &&
-            typeof (sentTx as { wait?: unknown }).wait === "function") {
-          // Standard SentTx — call .wait() to get receipt
-          const receipt = await (sentTx as { wait: () => Promise<{ txHash?: { toString(): string } }> }).wait();
-          hash = receipt?.txHash?.toString?.();
-        } else if (typeof sentTx === "string") {
-          // Azguard returned the tx hash directly as a string
-          hash = sentTx;
-        } else if (sentTx && typeof (sentTx as { toString?: () => string }).toString === "function") {
-          // Azguard returned a TxHash object — call toString()
-          const str = (sentTx as { toString: () => string }).toString();
-          if (str !== "[object Object]") hash = str;
-        }
+        // Azguard's sendTx returns the raw result directly, not a SentTx wrapper.
+        // Walk every possible shape to extract a tx hash string.
+        const extractHash = (v: unknown): string | undefined => {
+          if (!v) return undefined;
+          if (typeof v === "string" && v.startsWith("0x")) return v;
+          // SentTx with .wait()
+          if (typeof v === "object" && "wait" in (v as object) &&
+              typeof (v as { wait: unknown }).wait === "function") {
+            // call below — handled async
+            return undefined;
+          }
+          // object with .txHash
+          const withTxHash = v as { txHash?: unknown };
+          if (withTxHash.txHash) return extractHash(withTxHash.txHash);
+          // object with .toString() that looks like a hex hash
+          if (typeof (v as { toString?: () => string }).toString === "function") {
+            const s = String(v);
+            if (s.startsWith("0x") && s.length >= 10) return s;
+          }
+          return undefined;
+        };
 
-        // Fallback: check for .txHash property on whatever was returned
-        if (!hash) {
-          const asTxHash = sentTx as { txHash?: { toString(): string } | string } | null;
-          const inner = asTxHash?.txHash;
-          hash = typeof inner === "string" ? inner : inner?.toString?.();
+        let hash: string | undefined = extractHash(sentTx);
+
+        // If sentTx has .wait(), call it and extract from receipt
+        if (!hash && sentTx && typeof sentTx === "object" && "wait" in (sentTx as object) &&
+            typeof (sentTx as { wait: unknown }).wait === "function") {
+          const receipt = await (sentTx as { wait: () => Promise<unknown> }).wait();
+          console.log("[usePXE] receipt:", receipt);
+          hash = extractHash(receipt) ?? extractHash((receipt as { txHash?: unknown })?.txHash);
         }
 
         onStep?.("confirmed");
-        if (!hash) throw new Error("Transaction submitted but no tx hash was returned.");
+        console.log("[usePXE] extracted hash:", hash);
+        if (!hash) throw new Error("Transaction submitted but no tx hash returned. Check console for sentTx shape.");
         return hash;
       } catch (err) {
         if (abortRef.current?.signal.aborted) {
