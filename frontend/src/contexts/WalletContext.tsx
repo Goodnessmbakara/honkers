@@ -292,7 +292,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       // Auto-recover from stale IndexedDB on first attempt
-      const isStale = msg.toLowerCase().includes("block hash") && msg.toLowerCase().includes("not found");
+      const isStale = (
+        (msg.toLowerCase().includes("block hash") && msg.toLowerCase().includes("not found")) ||
+        msg.toLowerCase().includes("existing nullifier") ||
+        msg.toLowerCase().includes("invalid proof") ||
+        msg.toLowerCase().includes("nullifier") ||
+        msg.toLowerCase().includes("stale")
+      );
       if (isStale && !sessionStorage.getItem("honkers:pxe-recovery")) {
         sessionStorage.setItem("honkers:pxe-recovery", "1");
         await resetEmbeddedPXEState();

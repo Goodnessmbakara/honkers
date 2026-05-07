@@ -7,8 +7,9 @@
 // ---------------------------------------------------------------------------
 
 import { useEffect, useRef, useState } from "react";
-import { X, Loader2, CheckCircle2, ExternalLink, WifiOff, Globe } from "lucide-react";
+import { X, Loader2, CheckCircle2, ExternalLink, WifiOff, Globe, Trash2 } from "lucide-react";
 import { useWalletContext } from "../../contexts/WalletContext";
+import { resetEmbeddedPXEState } from "../../utils/embeddedPXE";
 import type { WalletProvider } from "@aztec/wallet-sdk/manager";
 
 // Known wallets shown as static cards — they light up when discovered
@@ -220,24 +221,51 @@ export function WalletPickerModal() {
         </div>
 
         {/* Error display */}
-        {(connectError || walletError) && (
-          <div
-            style={{
-              margin: "0 var(--space-3) var(--space-3)",
-              padding: "var(--space-3)",
-              background: "rgba(239,68,68,0.08)",
-              border: "1px solid rgba(239,68,68,0.25)",
-              borderRadius: "var(--radius-md)",
-              fontSize: "0.75rem",
-              color: "var(--negative)",
-              display: "flex",
-              gap: "var(--space-2)",
-            }}
-          >
-            <WifiOff size={13} style={{ flexShrink: 0, marginTop: 1 }} />
-            <span>{connectError ?? walletError}</span>
-          </div>
-        )}
+        {(connectError || walletError) && (() => {
+          const errMsg = connectError ?? walletError ?? "";
+          const isStaleCache = errMsg.toLowerCase().includes("nullifier") ||
+            errMsg.toLowerCase().includes("invalid proof") ||
+            errMsg.toLowerCase().includes("block hash");
+          return (
+            <div
+              style={{
+                margin: "0 var(--space-3) var(--space-3)",
+                padding: "var(--space-3)",
+                background: "rgba(239,68,68,0.08)",
+                border: "1px solid rgba(239,68,68,0.25)",
+                borderRadius: "var(--radius-md)",
+                fontSize: "0.75rem",
+                color: "var(--negative)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "var(--space-2)",
+              }}
+            >
+              <div style={{ display: "flex", gap: "var(--space-2)" }}>
+                <WifiOff size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>{errMsg}</span>
+              </div>
+              {isStaleCache && (
+                <button
+                  onClick={async () => {
+                    await resetEmbeddedPXEState();
+                    sessionStorage.removeItem("honkers:pxe-recovery");
+                    window.location.reload();
+                  }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)",
+                    borderRadius: "var(--radius-sm)", padding: "4px 10px",
+                    color: "var(--negative)", fontSize: "0.6875rem", cursor: "pointer",
+                    alignSelf: "flex-start",
+                  }}
+                >
+                  <Trash2 size={11} /> Clear cached wallet data & reload
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Footer hint */}
         <div
