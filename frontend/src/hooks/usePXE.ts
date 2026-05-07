@@ -132,9 +132,11 @@ export function usePXE() {
         let hash: string | undefined = extractHash(sentTx);
 
         // If sentTx has .wait(), call it and extract from receipt
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (!hash && sentTx && typeof sentTx === "object" && "wait" in (sentTx as object) &&
-            typeof (sentTx as { wait: unknown }).wait === "function") {
-          const receipt = await (sentTx as { wait: () => Promise<unknown> }).wait();
+            typeof (sentTx as unknown as { wait: unknown }).wait === "function") {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const receipt = await (sentTx as unknown as { wait: () => Promise<unknown> }).wait();
           console.log("[usePXE] receipt:", receipt);
           hash = extractHash(receipt) ?? extractHash((receipt as { txHash?: unknown })?.txHash);
         }

@@ -17,6 +17,8 @@ export interface Market {
   status: MarketStatus;
   createdAt: string;
   question?: string;
+  criteria?: string;
+  source?: string;
 }
 
 export interface MarketDetail extends Market {

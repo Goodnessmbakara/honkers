@@ -236,7 +236,7 @@ async function fetchAllMarketsFromChain(factoryAddr: string): Promise<Market[]> 
     }),
   ]);
 
-  const markets = marketData.filter((m): m is Market => m !== null);
+  const markets = (marketData as (Market | null)[]).filter((m): m is Market => m !== null);
 
   // Enrich with text from public logs
   for (const m of markets) {
