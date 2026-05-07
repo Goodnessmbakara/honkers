@@ -14,13 +14,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { aztecConfig } from "../config/aztec";
 import type { Market, MarketDetail, PricePoint } from "../types";
-import { useWalletContext } from "../contexts/WalletContext";
-import { getArtifact } from "../config/contractArtifacts";
-import { Contract } from "@aztec/aztec.js/contracts";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { Fr } from "@aztec/aztec.js/fields";
-import { ammPriceToFloat, fieldLikeToBigInt, unwrapSimulate } from "../utils/aztecSimulate";
-import { ensureContractRegisteredWithPXE } from "../utils/ensureContractRegistered";
 
 // ---------------------------------------------------------------------------
 // MarketFactory public storage base slots (from contracts/market_factory/src/main.nr)
@@ -69,6 +62,37 @@ async function mapSlot(base: bigint, key: bigint): Promise<string> {
 
 function toHex64(n: bigint): string {
   return `0x${n.toString(16).padStart(64, "0")}`;
+}
+
+// ---------------------------------------------------------------------------
+// AMM price reader — reads reserves directly from public storage.
+// No wallet required — avoids aztec_executeUtility which crashes via Azguard.
+// AMM storage: admin=1, vault=2, oracle=3, deps_set=4,
+//              reserve_yes=5, reserve_no=6, invariant_k=7
+// ---------------------------------------------------------------------------
+const AMM_SLOTS = { reserve_yes: 5n, reserve_no: 6n } as const;
+const SCALE = 1_000_000n;
+
+async function fetchAmmPrices(ammAddr: string, marketId: bigint): Promise<{ yesPrice: number; noPrice: number; liquidity: number }> {
+  try {
+    const [rySlot, rnSlot] = await Promise.all([
+      mapSlot(AMM_SLOTS.reserve_yes, marketId),
+      mapSlot(AMM_SLOTS.reserve_no, marketId),
+    ]);
+    const [ryRaw, rnRaw] = await Promise.all([
+      readSlot(ammAddr, rySlot),
+      readSlot(ammAddr, rnSlot),
+    ]);
+    const ry = ryRaw;
+    const rn = rnRaw;
+    if (ry === 0n && rn === 0n) return { yesPrice: 0.5, noPrice: 0.5, liquidity: 0 };
+    const total = ry + rn;
+    const yesPrice = Number((rn * SCALE) / total) / Number(SCALE);
+    const noPrice = Number((ry * SCALE) / total) / Number(SCALE);
+    return { yesPrice, noPrice, liquidity: Number(total) };
+  } catch {
+    return { yesPrice: 0.5, noPrice: 0.5, liquidity: 0 };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -269,7 +293,6 @@ export function useMarketDetail(marketId: number | null) {
   const [market, setMarket] = useState<MarketDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { wallet, aztecNode } = useWalletContext();
 
   useEffect(() => {
     if (marketId === null) return;
@@ -313,34 +336,10 @@ export function useMarketDetail(marketId: number | null) {
         const now = Math.floor(Date.now() / 1000);
         const text = textMap[marketId];
 
-        // Fetch AMM prices — requires wallet (utility call)
-        let yesPrice = 0.5;
-        let noPrice = 0.5;
-        let liquidity = 0;
-
-        if (wallet && aztecNode && ammAddr) {
-          try {
-            const ammArtifact = getArtifact(ammAddr);
-            const amm = Contract.at(AztecAddress.fromString(ammAddr), ammArtifact, wallet);
-            await ensureContractRegisteredWithPXE(wallet, aztecNode, ammAddr, ammArtifact);
-
-            const [yesRaw, noRaw] = await Promise.all([
-              amm.methods.get_price_yes(new Fr(mid)).simulate(),
-              amm.methods.get_price_no(new Fr(mid)).simulate(),
-            ]);
-            yesPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
-            noPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
-
-            const resRaw = await amm.methods.get_reserves(new Fr(mid)).simulate();
-            const tup = unwrapSimulate(resRaw) as unknown;
-            const pair = Array.isArray(tup) ? tup : tup != null && typeof tup === "object" ? Object.values(tup as object) : [];
-            const ry = pair[0] != null ? fieldLikeToBigInt(pair[0]) : 0n;
-            const rn = pair[1] != null ? fieldLikeToBigInt(pair[1]) : 0n;
-            liquidity = Number(ry + rn);
-          } catch (e) {
-            console.warn("[useMarketDetail] AMM price fetch failed (wallet required):", e);
-          }
-        }
+        // Fetch AMM prices directly from chain storage — no wallet needed, no Azguard crash.
+        const { yesPrice, noPrice, liquidity } = ammAddr
+          ? await fetchAmmPrices(ammAddr, mid)
+          : { yesPrice: 0.5, noPrice: 0.5, liquidity: 0 };
 
         if (!cancelled) {
           setMarket({
@@ -370,7 +369,7 @@ export function useMarketDetail(marketId: number | null) {
     })();
 
     return () => { cancelled = true; };
-  }, [marketId, wallet, aztecNode]);
+  }, [marketId]);
 
   return { market, loading, error };
 }
@@ -380,10 +379,9 @@ export function useMarketDetail(marketId: number | null) {
 // ---------------------------------------------------------------------------
 export function useMarketPrices(marketId: number | null) {
   const [prices, setPrices] = useState<PricePoint[]>([]);
-  const { wallet, aztecNode } = useWalletContext();
 
   useEffect(() => {
-    if (marketId === null || !wallet || !aztecNode) return;
+    if (marketId === null) return;
     let cancelled = false;
 
     (async () => {
@@ -391,29 +389,10 @@ export function useMarketPrices(marketId: number | null) {
         const ammAddr = aztecConfig.contracts.amm;
         if (!ammAddr) return;
 
-        const ammArtifact = getArtifact(ammAddr);
-        const amm = Contract.at(AztecAddress.fromString(ammAddr), ammArtifact, wallet);
-        const mid = BigInt(marketId);
-
-        const [yesRaw, noRaw] = await Promise.all([
-          amm.methods.get_price_yes(new Fr(mid)).simulate(),
-          amm.methods.get_price_no(new Fr(mid)).simulate(),
-        ]);
-        const yes = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
-        const no = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
-
-        let liquidity = 0;
-        try {
-          const resRaw = await amm.methods.get_reserves(new Fr(mid)).simulate();
-          const tup = unwrapSimulate(resRaw) as unknown;
-          const pair = Array.isArray(tup) ? tup : tup != null && typeof tup === "object" ? Object.values(tup as object) : [];
-          const ry = pair[0] != null ? fieldLikeToBigInt(pair[0]) : 0n;
-          const rn = pair[1] != null ? fieldLikeToBigInt(pair[1]) : 0n;
-          liquidity = Number(ry + rn);
-        } catch { /* optional */ }
+        const { yesPrice, noPrice, liquidity } = await fetchAmmPrices(ammAddr, BigInt(marketId));
 
         if (!cancelled) {
-          setPrices([{ timestamp: new Date().toISOString(), yesPrice: yes, noPrice: no, liquidity }]);
+          setPrices([{ timestamp: new Date().toISOString(), yesPrice, noPrice, liquidity }]);
         }
       } catch (err) {
         console.warn("[useMarketPrices] chain read failed:", err);
@@ -421,7 +400,7 @@ export function useMarketPrices(marketId: number | null) {
     })();
 
     return () => { cancelled = true; };
-  }, [marketId, wallet, aztecNode]);
+  }, [marketId]);
 
   return prices;
 }
