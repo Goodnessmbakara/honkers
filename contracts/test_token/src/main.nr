@@ -1,11 +1,9 @@
 use aztec::macros::aztec;
 
-/// TestToken -- testnet USDC for Phase 1 (no L1 bridge).
+/// USDh (USD Honkers) -- testnet stablecoin for the Honkers prediction market.
 ///
-/// A simplified public token with:
-///   - Public mint (faucet) with per-address rate limiting (fair-use).
-///   - Public transfers.
-///   - Total supply tracking (public).
+/// Open faucet: anyone can mint up to 10,000 USDh per hour.
+/// No L1 bridge -- testnet only.
 #[aztec]
 pub contract TestToken {
     use aztec::{
@@ -14,8 +12,8 @@ pub contract TestToken {
         state_vars::{Map, PublicImmutable, PublicMutable},
     };
 
-    global MAX_FAUCET_AMOUNT: Field = 100000000;
-    global FAUCET_COOLDOWN: Field = 3600;
+    global MAX_FAUCET_AMOUNT: Field = 10000000000; // 10,000 USDh (6 decimals)
+    global FAUCET_COOLDOWN: Field = 3600;           // 1 hour between mints
 
     #[storage]
     struct Storage<Context> {
@@ -38,9 +36,10 @@ pub contract TestToken {
         self.storage.total_supply.write(0);
     }
 
+    /// Public faucet -- anyone can call this once per hour to mint up to 10,000 USDh.
     #[external("public")]
     fn faucet(amount: Field) {
-        assert(amount as u64 <= MAX_FAUCET_AMOUNT as u64, "Exceeds max faucet amount");
+        assert(amount as u64 <= MAX_FAUCET_AMOUNT as u64, "Exceeds max faucet amount (10,000 USDh)");
         assert(amount as u64 > 0, "Amount must be positive");
 
         let sender = self.msg_sender();
@@ -51,7 +50,7 @@ pub contract TestToken {
         if last != 0 {
             assert(
                 (now as u64 - last as u64) >= FAUCET_COOLDOWN as u64,
-                "Faucet cooldown not expired",
+                "Faucet cooldown not expired (1 hour)",
             );
         }
 

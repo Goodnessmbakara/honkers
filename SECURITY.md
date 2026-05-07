@@ -374,9 +374,9 @@ No external audit has been conducted. This document reflects an internal AI-assi
 | Contract | Address |
 |----------|---------|
 | Admin | `0x1092539b9d20142398c8a8f3e9b0462f1d38cddd587c94b7bc80ff47e6a0b51a` |
-| TestToken | `0x0e40029522ceec5c570abfc7b18aa49b5c6292f1a0d26164b7cb157df8bcd66a` |
+| USDh (TestToken) | `0x14913c13aa09a37f18290ffe69a6c9b6a49cebd7e94b909f6c38a8324d2d11c3` |
 | AMM | `0x215e27e2f7fa23f68490a4097470664cce3cb5c5873995eaed4c261af578fb48` |
 | Oracle | `0x14d5dfe1305071d6fc77de04698d323a7347339a950fe8571f24b4003511f449` |
 | PrivateVault | `0x11dd43c8764811ed0b87e36fce7aecb58e465bc10df55cd49e0ae9004c9b2c7c` |
-| MarketFactory | `0x0fdce9f2c23d2658c0122dc85f91cff627215b769a31d9886fb2884f9c543b65` |
+| MarketFactory | `0x1c82eddd1e117cca619d8b0e144d0b5392d8a7a54a0733e8d34950ac3dd176a0` |
 | SponsoredFPC | `0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257` |
