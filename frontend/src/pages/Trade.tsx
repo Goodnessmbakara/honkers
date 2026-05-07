@@ -23,7 +23,7 @@ export function Trade() {
   const { connected, address } = useWallet();
   const { balance } = usePortfolio(address);
   const { step, elapsed, txHash, txHashes, error, execute, cancel, reset } = useTrade();
-  const { request: requestFaucet, loading: faucetLoading } = useFaucet(address);
+  const { request: requestFaucet, loading: faucetLoading, error: faucetError } = useFaucet(address);
 
   if (loading) {
     return (
@@ -106,7 +106,8 @@ export function Trade() {
                 if (!address) return;
                 execute({ marketId: market.marketId, side, amount, maxSlippage: 500 }, address);
               }}
-              onFaucet={() => requestFaucet(100).catch(() => {})}
+              onFaucet={() => void requestFaucet(10000)}
+              faucetError={faucetError}
               faucetLoading={faucetLoading}
             />
           )}

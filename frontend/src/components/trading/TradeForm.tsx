@@ -16,10 +16,11 @@ interface Props {
   onSubmit: (side: TradeSide, amount: number) => void;
   onFaucet?: () => void;
   faucetLoading?: boolean;
+  faucetError?: string | null;
   disabled?: boolean;
 }
 
-export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, faucetLoading, disabled }: Props) {
+export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, faucetLoading, faucetError, disabled }: Props) {
   const [side, setSide] = useState<TradeSide>("yes");
   const [amount, setAmount] = useState("");
   const parsedAmount = Number(amount) || 0;
@@ -76,14 +77,21 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, f
           </button>
         </div>
         {maxBalance === 0 && onFaucet && (
-          <button
-            className="btn-ghost"
-            style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "var(--space-1)", padding: 0, textAlign: "left" }}
-            onClick={onFaucet}
-            disabled={faucetLoading}
-          >
-            {faucetLoading ? "Requesting tokens…" : "⚡ Get test USDh"}
-          </button>
+          <div>
+            <button
+              className="btn-ghost"
+              style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "var(--space-1)", padding: 0, textAlign: "left" }}
+              onClick={onFaucet}
+              disabled={faucetLoading}
+            >
+              {faucetLoading ? "Requesting 10,000 USDh…" : "⚡ Get test USDh"}
+            </button>
+            {faucetError && (
+              <p style={{ fontSize: "0.75rem", color: "var(--negative)", marginTop: "var(--space-1)" }}>
+                {faucetError}
+              </p>
+            )}
+          </div>
         )}
       </div>
 
