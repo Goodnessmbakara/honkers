@@ -18,6 +18,7 @@ import { useWalletContext } from "../contexts/WalletContext";
 import { getArtifact } from "../config/contractArtifacts";
 import { Contract } from "@aztec/aztec.js/contracts";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
+import { Fr } from "@aztec/aztec.js/fields";
 import { ammPriceToFloat, fieldLikeToBigInt, unwrapSimulate } from "../utils/aztecSimulate";
 import { ensureContractRegisteredWithPXE } from "../utils/ensureContractRegistered";
 
@@ -324,13 +325,13 @@ export function useMarketDetail(marketId: number | null) {
             await ensureContractRegisteredWithPXE(wallet, aztecNode, ammAddr, ammArtifact);
 
             const [yesRaw, noRaw] = await Promise.all([
-              amm.methods.get_price_yes(mid).simulate(),
-              amm.methods.get_price_no(mid).simulate(),
+              amm.methods.get_price_yes(new Fr(mid)).simulate(),
+              amm.methods.get_price_no(new Fr(mid)).simulate(),
             ]);
             yesPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
             noPrice = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
 
-            const resRaw = await amm.methods.get_reserves(mid).simulate();
+            const resRaw = await amm.methods.get_reserves(new Fr(mid)).simulate();
             const tup = unwrapSimulate(resRaw) as unknown;
             const pair = Array.isArray(tup) ? tup : tup != null && typeof tup === "object" ? Object.values(tup as object) : [];
             const ry = pair[0] != null ? fieldLikeToBigInt(pair[0]) : 0n;
@@ -395,15 +396,15 @@ export function useMarketPrices(marketId: number | null) {
         const mid = BigInt(marketId);
 
         const [yesRaw, noRaw] = await Promise.all([
-          amm.methods.get_price_yes(mid).simulate(),
-          amm.methods.get_price_no(mid).simulate(),
+          amm.methods.get_price_yes(new Fr(mid)).simulate(),
+          amm.methods.get_price_no(new Fr(mid)).simulate(),
         ]);
         const yes = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(yesRaw)));
         const no = ammPriceToFloat(fieldLikeToBigInt(unwrapSimulate(noRaw)));
 
         let liquidity = 0;
         try {
-          const resRaw = await amm.methods.get_reserves(mid).simulate();
+          const resRaw = await amm.methods.get_reserves(new Fr(mid)).simulate();
           const tup = unwrapSimulate(resRaw) as unknown;
           const pair = Array.isArray(tup) ? tup : tup != null && typeof tup === "object" ? Object.values(tup as object) : [];
           const ry = pair[0] != null ? fieldLikeToBigInt(pair[0]) : 0n;
