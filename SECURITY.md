@@ -375,8 +375,8 @@ No external audit has been conducted. This document reflects an internal AI-assi
 |----------|---------|
 | Admin | `0x1092539b9d20142398c8a8f3e9b0462f1d38cddd587c94b7bc80ff47e6a0b51a` |
 | USDh (TestToken) | `0x14913c13aa09a37f18290ffe69a6c9b6a49cebd7e94b909f6c38a8324d2d11c3` |
-| AMM | `0x21433bf88a25713b60d566d37050bb4777ddb3668b1126e4f7518c9513dddbd5` |
+| AMM | `0x0804e1da83c1c2cc473f26c9cd74cc3dfdbeed0e663813d5cfdf28cea6062732` |
 | Oracle | `0x29e13066f73f7da9fbdbf3ac0870607a2bc21bcf00bd20cec35d141f025a2c92` |
-| PrivateVault | `0x0a692389720e019c4ca912c9a7fec6e4176fe933392452278fd8aeb924d31ae3` |
-| MarketFactory | `0x006e177296bd3d9d280c333336f5d9eff5333a621fa12887bdb3e22518d55056` |
+| PrivateVault | `0x1f0549ed709dc07cfbcc472e0091bf3782ddfbd9b24bf391011bc90d55cb3208` |
+| MarketFactory | `0x243d77c08c93f5e7d4f40c384feb39130b3a85d20c21c9a88fc69aa503bd3cfb` |
 | SponsoredFPC | `0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257` |
