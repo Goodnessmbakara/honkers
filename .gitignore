@@ -9,8 +9,8 @@ node_modules/
 dist/
 pnpm-lock.yaml
 
-# Noir / Aztec build artifacts
-contracts/target/
+# Noir / Aztec build artifacts — contract ABIs are committed (needed by frontend Docker build)
+# contracts/target/  <-- intentionally NOT ignored
 tests/noir/target/
 tests/integration/codegenCache.json
 
