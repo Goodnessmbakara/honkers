@@ -104,15 +104,34 @@ export function usePXE() {
 
         onStep?.("submitting");
         onStep?.("confirming");
-        const receipt =
-          sentTx &&
-          typeof sentTx === "object" &&
-          "wait" in sentTx &&
-          typeof (sentTx as { wait?: () => Promise<{ txHash?: { toString(): string } }> }).wait === "function"
-            ? await (sentTx as { wait: () => Promise<{ txHash?: { toString(): string } }> }).wait()
-            : (sentTx as { receipt?: { txHash?: { toString(): string } } }).receipt;
+
+        // Azguard's sendTx returns the raw result (TxHash string/object), not a SentTx.
+        // Standard Aztec.js SentTx has .wait() that resolves to a TxReceipt with .txHash.
+        // Handle all three possible shapes:
+        let hash: string | undefined;
+
+        if (sentTx && typeof sentTx === "object" && "wait" in sentTx &&
+            typeof (sentTx as { wait?: unknown }).wait === "function") {
+          // Standard SentTx — call .wait() to get receipt
+          const receipt = await (sentTx as { wait: () => Promise<{ txHash?: { toString(): string } }> }).wait();
+          hash = receipt?.txHash?.toString?.();
+        } else if (typeof sentTx === "string") {
+          // Azguard returned the tx hash directly as a string
+          hash = sentTx;
+        } else if (sentTx && typeof (sentTx as { toString?: () => string }).toString === "function") {
+          // Azguard returned a TxHash object — call toString()
+          const str = (sentTx as { toString: () => string }).toString();
+          if (str !== "[object Object]") hash = str;
+        }
+
+        // Fallback: check for .txHash property on whatever was returned
+        if (!hash) {
+          const asTxHash = sentTx as { txHash?: { toString(): string } | string } | null;
+          const inner = asTxHash?.txHash;
+          hash = typeof inner === "string" ? inner : inner?.toString?.();
+        }
+
         onStep?.("confirmed");
-        const hash = receipt?.txHash?.toString?.();
         if (!hash) throw new Error("Transaction submitted but no tx hash was returned.");
         return hash;
       } catch (err) {
