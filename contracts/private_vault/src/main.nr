@@ -63,7 +63,7 @@ pub contract PrivateVault {
     fn deposit_collateral(amount: Field) {
         let sender = self.msg_sender();
         let note = CollateralNote::new(amount);
-        self.storage.collateral.at(sender).insert(note).deliver(MessageDelivery.OFFCHAIN);
+        self.storage.collateral.at(sender).insert(note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
     }
 
     #[external("private")]
@@ -84,7 +84,7 @@ pub contract PrivateVault {
         let change = total - amount;
         if change != 0 {
             let change_note = CollateralNote::new(change);
-            self.storage.collateral.at(sender).insert(change_note).deliver(MessageDelivery.OFFCHAIN);
+            self.storage.collateral.at(sender).insert(change_note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
         }
     }
 
@@ -114,11 +114,11 @@ pub contract PrivateVault {
         let change = total - collateral_amount;
         if change != 0 {
             let change_note = CollateralNote::new(change);
-            self.storage.collateral.at(buyer).insert(change_note).deliver(MessageDelivery.OFFCHAIN);
+            self.storage.collateral.at(buyer).insert(change_note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
         }
 
         let share_note = ShareNote::new(market_id, side, min_shares_out, price_per_share);
-        self.storage.shares.at(buyer).insert(share_note).deliver(MessageDelivery.OFFCHAIN);
+        self.storage.shares.at(buyer).insert(share_note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
         self.context.call_public_function(
             self.context.this_address(),
@@ -165,14 +165,14 @@ pub contract PrivateVault {
                 if (note.get_market_id() == market_id) & (note.get_side() == winning_side) {
                     winning_shares += note.get_amount();
                 } else if note.get_market_id() != market_id {
-                    self.storage.shares.at(sender).insert(note).deliver(MessageDelivery.OFFCHAIN);
+                    self.storage.shares.at(sender).insert(note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
                 }
             }
         }
 
         if winning_shares != 0 {
             let winning_note = WinningNote::new(market_id, winning_shares, block_number);
-            self.storage.winnings.at(sender).insert(winning_note).deliver(MessageDelivery.OFFCHAIN);
+            self.storage.winnings.at(sender).insert(winning_note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
         }
     }
 
@@ -192,7 +192,7 @@ pub contract PrivateVault {
                 if note.get_market_id() == market_id {
                     total_winnings += note.get_amount();
                 } else {
-                    self.storage.winnings.at(sender).insert(note).deliver(MessageDelivery.OFFCHAIN);
+                    self.storage.winnings.at(sender).insert(note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
                 }
             }
         }
@@ -203,10 +203,10 @@ pub contract PrivateVault {
         let net = total_winnings - fee;
 
         let user_collateral = CollateralNote::new(net);
-        self.storage.collateral.at(sender).insert(user_collateral).deliver(MessageDelivery.OFFCHAIN);
+        self.storage.collateral.at(sender).insert(user_collateral).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
 
         let fee_note = CollateralNote::new(fee);
-        self.storage.collateral.at(fee_recipient).insert(fee_note).deliver(MessageDelivery.OFFCHAIN);
+        self.storage.collateral.at(fee_recipient).insert(fee_note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
     }
 
     // C-4 fix: enqueue Oracle.assert_market_voided before processing refunds.
@@ -235,14 +235,14 @@ pub contract PrivateVault {
                 if note.get_market_id() == market_id {
                     refund_amount += ((note.get_amount() as u64 * note.get_entry_price() as u64) / 1000000) as Field;
                 } else {
-                    self.storage.shares.at(sender).insert(note).deliver(MessageDelivery.OFFCHAIN);
+                    self.storage.shares.at(sender).insert(note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
                 }
             }
         }
 
         if refund_amount != 0 {
             let refund_note = CollateralNote::new(refund_amount);
-            self.storage.collateral.at(sender).insert(refund_note).deliver(MessageDelivery.OFFCHAIN);
+            self.storage.collateral.at(sender).insert(refund_note).deliver(MessageDelivery.ONCHAIN_CONSTRAINED);
         }
     }
 
