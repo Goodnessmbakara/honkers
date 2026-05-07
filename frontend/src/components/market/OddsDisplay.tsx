@@ -9,7 +9,7 @@ export function OddsDisplay({ yesPrice, noPrice }: { yesPrice: number; noPrice: 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
       <span style={{ color: "var(--positive)", fontWeight: 500 }}>
-        YES {yesPct}¢
+        YES {yesPct}%
       </span>
       <div
         style={{
@@ -24,7 +24,7 @@ export function OddsDisplay({ yesPrice, noPrice }: { yesPrice: number; noPrice: 
         <div style={{ width: `${noPct}%`, background: "var(--negative)" }} />
       </div>
       <span style={{ color: "var(--negative)", fontWeight: 500 }}>
-        NO {noPct}¢
+        NO {noPct}%
       </span>
     </div>
   );

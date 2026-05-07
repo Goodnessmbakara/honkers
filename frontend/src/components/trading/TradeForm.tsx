@@ -40,7 +40,7 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, f
           }}
           onClick={() => setSide("yes")}
         >
-          <TrendingUp size={16} /> YES {Math.round(yesPrice * 100)}¢
+          <TrendingUp size={16} /> YES {Math.round(yesPrice * 100)}%
         </button>
         <button
           className={side === "no" ? "btn-primary" : "btn-secondary"}
@@ -51,7 +51,7 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, f
           }}
           onClick={() => setSide("no")}
         >
-          <TrendingDown size={16} /> NO {Math.round(noPrice * 100)}¢
+          <TrendingDown size={16} /> NO {Math.round(noPrice * 100)}%
         </button>
       </div>
 
@@ -90,7 +90,7 @@ export function TradeForm({ yesPrice, noPrice, maxBalance, onSubmit, onFaucet, f
       {/* Estimated shares */}
       {parsedAmount > 0 && (
         <div style={{ fontSize: "0.875rem", color: "var(--text-secondary)" }}>
-          ≈ {estimatedShares.toFixed(2)} shares @ {(price * 100).toFixed(1)}¢
+          ≈ {estimatedShares.toFixed(2)} shares @ {(price * 100).toFixed(1)}%
         </div>
       )}
 
