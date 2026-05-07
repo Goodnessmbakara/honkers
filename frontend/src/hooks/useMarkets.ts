@@ -73,7 +73,7 @@ function toHex64(n: bigint): string {
 const AMM_SLOTS = { reserve_yes: 5n, reserve_no: 6n } as const;
 const SCALE = 1_000_000n;
 
-async function fetchAmmPrices(ammAddr: string, marketId: bigint): Promise<{ yesPrice: number; noPrice: number; liquidity: number }> {
+export async function fetchAmmPrices(ammAddr: string, marketId: bigint): Promise<{ yesPrice: number; noPrice: number; liquidity: number }> {
   try {
     const [rySlot, rnSlot] = await Promise.all([
       mapSlot(AMM_SLOTS.reserve_yes, marketId),

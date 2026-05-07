@@ -1,9 +1,8 @@
 // ---------------------------------------------------------------------------
 // useTrade — trade execution, local proof generation, tx submission
-// (FR-T-1 through FR-T-5)
 //
-// Flow: deposit_collateral(amount) → buy_shares(..., shares_out, price_per_share).
-// Price and min shares follow AMM utility functions (SCALE = 1e6).
+// Flow: deposit_collateral(amount) → buy_shares(..., min_shares_out, price_per_share).
+// Price is read directly from AMM public storage (no wallet/Azguard needed).
 // ---------------------------------------------------------------------------
 
 import { useCallback, useState } from "react";
@@ -11,28 +10,15 @@ import type { ProofStep, TradeParams } from "../types";
 import { aztecConfig } from "../config/aztec";
 import { usePXE } from "./usePXE";
 import { Fr } from "@aztec/aztec.js/fields";
+import { fetchAmmPrices } from "./useMarkets";
 
 const SCALE = 1_000_000n;
 
-function fieldLikeToBigInt(v: unknown): bigint {
-  if (typeof v === "bigint") return v;
-  if (typeof v === "number") return BigInt(Math.trunc(v));
-  if (typeof v === "string") return BigInt(v);
-  if (v != null && typeof (v as { toBigInt?: () => bigint }).toBigInt === "function") {
-    return (v as { toBigInt: () => bigint }).toBigInt();
-  }
-  if (v != null && typeof (v as { value?: unknown }).value !== "undefined") {
-    return fieldLikeToBigInt((v as { value: unknown }).value);
-  }
-  throw new Error(`Unexpected field value from simulate: ${typeof v} ${JSON.stringify(v)}`);
-}
-
 export function useTrade() {
-  const { simulateAndProve, simulateView, cancelProof } = usePXE();
+  const { simulateAndProve, cancelProof } = usePXE();
   const [step, setStep] = useState<ProofStep | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [txHash, setTxHash] = useState<string | null>(null);
-  /** Two-step trade: deposit tx then buy tx */
   const [txHashes, setTxHashes] = useState<[string, string] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,9 +37,11 @@ export function useTrade() {
         const amm = aztecConfig.contracts.amm;
         if (!amm) throw new Error("AMM address not configured");
 
-        const priceFn = params.side === "yes" ? "get_price_yes" : "get_price_no";
-        const priceRaw = await simulateView(amm, priceFn, [new Fr(params.marketId)]);
-        const pricePerShare = fieldLikeToBigInt(priceRaw);
+        // Read price directly from chain storage — no wallet/Azguard utility call
+        const mid = BigInt(params.marketId);
+        const { yesPrice, noPrice } = await fetchAmmPrices(amm, mid);
+        const rawPrice = params.side === "yes" ? yesPrice : noPrice;
+        const pricePerShare = BigInt(Math.round(rawPrice * Number(SCALE)));
         if (pricePerShare === 0n) throw new Error("AMM price is zero (market not initialized?)");
 
         const collateralAmount = BigInt(params.amount);
@@ -91,7 +79,7 @@ export function useTrade() {
           aztecConfig.contracts.privateVault,
           "buy_shares",
           [
-            new Fr(params.marketId),
+            new Fr(mid),
             new Fr(sideField),
             new Fr(collateralAmount),
             new Fr(minSharesOut),
@@ -101,7 +89,7 @@ export function useTrade() {
           (s) => setStep(mapBuy(s)),
         );
 
-        setTxHashes([hashDeposit, hashBuy]);
+        setTxHashes([hashDeposit as string, hashBuy as string]);
         setTxHash(null);
         setStep("confirmed");
       } catch (err) {
@@ -111,7 +99,7 @@ export function useTrade() {
         clearInterval(timer);
       }
     },
-    [simulateAndProve, simulateView],
+    [simulateAndProve],
   );
 
   const cancel = useCallback(() => {
