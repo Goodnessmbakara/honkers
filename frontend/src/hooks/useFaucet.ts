@@ -24,27 +24,35 @@ export function useFaucet(walletAddress: string | null) {
 
   const request = useCallback(
     async (amount: number) => {
-      if (!walletAddress) throw new Error("Connect wallet first");
-      if (amount <= 0 || amount > MAX_AMOUNT) throw new Error(`Amount must be 1–${MAX_AMOUNT}`);
+      setError(null);
+      setTxHash(null);
+
+      if (!walletAddress) {
+        setError("Connect your wallet first.");
+        return;
+      }
+      if (amount <= 0 || amount > MAX_AMOUNT) {
+        setError(`Amount must be 1–${MAX_AMOUNT}`);
+        return;
+      }
 
       const remaining = cooldownRemaining();
       if (remaining > 0) {
-        throw new Error(`Cooldown active. Try again in ${Math.ceil(remaining / 60000)} min.`);
+        setError(`Cooldown active. Try again in ${Math.ceil(remaining / 60000)} min.`);
+        return;
       }
 
       setLoading(true);
-      setError(null);
-      setTxHash(null);
 
       try {
         const hash = await simulateAndProve(
           aztecConfig.contracts.usdh,
           "faucet",
-          [amount * 1e6], // 6 decimal USDC
+          [BigInt(Math.floor(amount * 1e6))],
           walletAddress,
         );
         localStorage.setItem(COOLDOWN_KEY, String(Date.now()));
-        setTxHash(hash);
+        setTxHash(hash as string);
         return hash;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
