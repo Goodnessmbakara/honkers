@@ -92,7 +92,7 @@ export const aztecConfig = {
     amm: import.meta.env.VITE_AMM_ADDRESS ?? "",
     oracle: import.meta.env.VITE_ORACLE_ADDRESS ?? "",
     marketFactory: import.meta.env.VITE_MARKET_FACTORY_ADDRESS ?? "",
-    testToken: import.meta.env.VITE_TEST_TOKEN_ADDRESS ?? "",
+    usdh: import.meta.env.VITE_USDH_ADDRESS ?? import.meta.env.VITE_TEST_TOKEN_ADDRESS ?? "",
   },
 
   /** Platform fee recipient for `claim_winnings`; falls back to vault admin via `get_admin` if unset. */

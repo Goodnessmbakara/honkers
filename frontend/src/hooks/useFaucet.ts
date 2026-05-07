@@ -38,7 +38,7 @@ export function useFaucet(walletAddress: string | null) {
 
       try {
         const hash = await simulateAndProve(
-          aztecConfig.contracts.testToken,
+          aztecConfig.contracts.usdh,
           "faucet",
           [amount * 1e6], // 6 decimal USDC
           walletAddress,

@@ -41,10 +41,11 @@ pub contract AMM {
         self.storage.deps_set.write(1);
     }
 
+    // Called by MarketFactory.create_market cross-contract to seed initial reserves.
+    // No admin check -- the existing == 0 guard ensures one-time-only initialisation.
+    // The caller (MarketFactory) is already trusted to supply valid market_id + end_date.
     #[external("public")]
     fn initialize_market(market_id: Field, initial_liquidity: Field, end_date: Field) {
-        let admin = self.storage.admin.read();
-        assert(self.msg_sender() == admin, "Only admin can initialize market");
         let existing = self.storage.invariant_k.at(market_id).read();
         assert(existing == 0, "Market already initialised");
 

@@ -1,21 +1,23 @@
 use aztec::macros::aztec;
 
-/// MarketFactory -- market creation (bond + schedule checks; optional admin whitelist storage kept for compatibility).
+/// MarketFactory -- market creation with automatic AMM seeding.
 #[aztec]
 pub contract MarketFactory {
     use aztec::{
         macros::{functions::{external, initializer}, storage::storage},
-        protocol::{address::AztecAddress, traits::{Serialize, ToField}},
+        protocol::{
+            address::AztecAddress,
+            abis::function_selector::FunctionSelector,
+            traits::{Serialize, ToField},
+        },
+        context::gas::GasOpts,
         state_vars::{Map, PublicMutable},
     };
 
     // ---------------------------------------------------------------------------
     // Public event emitted on every create_market call.
-    // Frontend reads this via node_getPublicLogs to display question text.
-    //
-    // Text fields are pre-packed by the caller: each Field holds up to 31 UTF-8
-    // bytes, big-endian. question uses 3 fields (93 bytes), criteria 2 (62 bytes),
-    // source 2 (62 bytes). Empty trailing fields are zero.
+    // Frontend reads via node_getPublicLogs to display question text.
+    // Text fields are pre-packed by caller: each Field holds up to 31 UTF-8 bytes.
     // ---------------------------------------------------------------------------
     #[abi(events)]
     #[derive(Serialize)]
@@ -84,17 +86,17 @@ pub contract MarketFactory {
         self.storage.whitelist.at(key).write(0);
     }
 
-    // ---------------------------------------------------------------------------
     // create_market
     //
     // Hash params (question_hash etc.) are SHA-256 truncated to 31 bytes,
     // computed client-side and stored on-chain for integrity.
     //
-    // Text params (question_0..2, criteria_0..1, source_0..1) are the raw UTF-8
-    // bytes packed into Fields (31 bytes each, big-endian). They are NOT stored
-    // on-chain - only emitted as a public log so the frontend can read them back.
-    // Unused trailing bytes in each Field should be zero-padded by the caller.
-    // ---------------------------------------------------------------------------
+    // Text params (question_0..2, criteria_0..1, source_0..1) are raw UTF-8
+    // bytes packed into Fields (31 bytes each, big-endian). Emitted as a
+    // public log only - not stored on-chain.
+    //
+    // After registering the market, calls AMM.initialize_market cross-contract
+    // using bond_amount as the initial liquidity seed.
     #[external("public")]
     fn create_market(
         question_hash: Field,
@@ -124,6 +126,16 @@ pub contract MarketFactory {
         self.storage.market_creator.at(market_id).write(creator);
         self.storage.market_end_date.at(market_id).write(end_date);
         self.storage.market_bond.at(market_id).write(bond_amount);
+
+        // Seed the AMM with initial liquidity equal to the bond amount.
+        // This automatically initialises reserves so trading can begin immediately.
+        let amm_address = self.storage.amm.read();
+        let _ = self.context.call_public_function(
+            amm_address,
+            comptime { FunctionSelector::from_signature("initialize_market(Field,Field,Field)") },
+            [market_id, bond_amount, end_date],
+            GasOpts::default(),
+        );
 
         self.context.emit_public_log(MarketCreated {
             market_id,

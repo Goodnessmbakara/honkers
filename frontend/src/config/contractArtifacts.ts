@@ -22,7 +22,7 @@ function ensureLoaded(): Record<string, ContractArtifact> {
     [aztecConfig.contracts.amm, AMMJson],
     [aztecConfig.contracts.oracle, OracleJson],
     [aztecConfig.contracts.marketFactory, MarketFactoryJson],
-    [aztecConfig.contracts.testToken, TestTokenJson],
+    [aztecConfig.contracts.usdh, TestTokenJson],
   ];
 
   for (const [addr, json] of pairs) {
