@@ -24,7 +24,7 @@ They have fundamental economic security failures — not edge-case exploits — 
 | ID | Severity | Contract | Issue |
 |----|----------|----------|-------|
 | A-1 | Architecture | All | No public event emission — indexer deleted, frontend ready, contract emit pending |
-| C-1 | Critical | AMM + PrivateVault | AMM and Vault are economically disconnected |
+| C-1 | FIXED | AMM + PrivateVault | AMM and Vault wired via _verify_swap enqueue pattern (2026-05-07) |
 | C-2 | Critical | PrivateVault | `settle_winnings` never verifies Oracle outcome |
 | C-3 | Critical | PrivateVault | `fee_recipient` is caller-supplied, not from storage |
 | C-4 | Critical | PrivateVault | `refund_void_market` never checks Oracle void state |
@@ -377,6 +377,6 @@ No external audit has been conducted. This document reflects an internal AI-assi
 | USDh (TestToken) | `0x14913c13aa09a37f18290ffe69a6c9b6a49cebd7e94b909f6c38a8324d2d11c3` |
 | AMM | `0x21433bf88a25713b60d566d37050bb4777ddb3668b1126e4f7518c9513dddbd5` |
 | Oracle | `0x14d5dfe1305071d6fc77de04698d323a7347339a950fe8571f24b4003511f449` |
-| PrivateVault | `0x11dd43c8764811ed0b87e36fce7aecb58e465bc10df55cd49e0ae9004c9b2c7c` |
+| PrivateVault | `0x240428387da4b777a68fd8160c3502ba55377177ebd1e5f79ec7edd1ee6a4972` |
 | MarketFactory | `0x1e1955a2e2d17c70c53313768052238704ffa04f23bbc7b9bac96ecdcc30334e` |
 | SponsoredFPC | `0x254082b62f9108d044b8998f212bb145619d91bfcd049461d74babb840181257` |
