@@ -1,8 +1,9 @@
 // ---------------------------------------------------------------------------
 // ServiceHealthBanner — degraded mode when the Aztec node RPC health check fails.
+// Requires 2 consecutive failures before showing (avoids transient blips).
 // ---------------------------------------------------------------------------
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle } from "lucide-react";
 import { aztecConfig } from "../../config/aztec";
@@ -10,6 +11,7 @@ import { aztecConfig } from "../../config/aztec";
 export function ServiceHealthBanner() {
   const [degraded, setDegraded] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
+  const failCount = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,11 +24,18 @@ export function ServiceHealthBanner() {
         });
         const json = await res.json();
         if (json.error) throw new Error(json.error.message);
+        failCount.current = 0;
         if (!cancelled) { setDegraded(false); setDetail(null); }
       } catch (e) {
-        if (!cancelled) {
+        failCount.current++;
+        if (!cancelled && failCount.current >= 2) {
+          // Truncate noisy JSON parse errors to a short message
+          let msg = e instanceof Error ? e.message : String(e);
+          if (msg.includes("is not valid JSON") || msg.includes("Unexpected token")) {
+            msg = "RPC returned an unexpected response";
+          }
           setDegraded(true);
-          setDetail(e instanceof Error ? e.message : String(e));
+          setDetail(msg);
         }
       }
     };
@@ -49,7 +58,7 @@ export function ServiceHealthBanner() {
       <div className="container" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
         <AlertTriangle size={14} style={{ color: "var(--negative)", flexShrink: 0 }} />
         <span style={{ color: "var(--text-secondary)" }}>
-          Node connection degraded — market reads may fail. {detail ? `(${detail})` : ""}
+          Node connection degraded — market reads may fail.{detail ? ` (${detail})` : ""}
         </span>
         <Link to="/network-error" style={{ color: "var(--accent)", marginLeft: "auto" }}>
           Diagnostics
