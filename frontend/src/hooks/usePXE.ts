@@ -109,23 +109,23 @@ export function usePXE() {
 
         // Azguard's sendTx returns the raw result directly, not a SentTx wrapper.
         // Walk every possible shape to extract a tx hash string.
+        // Azguard shape (confirmed): { offchainEffects, offchainMessages, receipt: { txHash } }
         const extractHash = (v: unknown): string | undefined => {
           if (!v) return undefined;
           if (typeof v === "string" && v.startsWith("0x")) return v;
           // SentTx with .wait()
           if (typeof v === "object" && "wait" in (v as object) &&
               typeof (v as { wait: unknown }).wait === "function") {
-            // call below — handled async
-            return undefined;
+            return undefined; // handled async below
           }
-          // object with .txHash
-          const withTxHash = v as { txHash?: unknown };
-          if (withTxHash.txHash) return extractHash(withTxHash.txHash);
+          const obj = v as Record<string, unknown>;
+          // Azguard: { receipt: { txHash } }
+          if (obj.receipt) return extractHash(obj.receipt);
+          // Direct txHash property
+          if (obj.txHash) return extractHash(obj.txHash);
           // object with .toString() that looks like a hex hash
-          if (typeof (v as { toString?: () => string }).toString === "function") {
-            const s = String(v);
-            if (s.startsWith("0x") && s.length >= 10) return s;
-          }
+          const s = String(v);
+          if (s.startsWith("0x") && s.length >= 10) return s;
           return undefined;
         };
 
