@@ -166,6 +166,14 @@ pub contract Oracle {
         self.storage.admin.read()
     }
 
+    // C-4 fix: callable via static_call from PrivateVault.refund_void_market.
+    // Reverts the calling tx if the market is not in STATE_VOIDED.
+    #[external("public")]
+    fn assert_market_voided(market_id: Field) {
+        let state = self.storage.resolution_state.at(market_id).read();
+        assert(state == STATE_VOIDED, "Market is not voided");
+    }
+
     #[external("utility")]
     unconstrained fn is_void_eligible(market_id: Field, current_timestamp: Field) -> pub bool {
         let state = self.storage.resolution_state.at(market_id).read();

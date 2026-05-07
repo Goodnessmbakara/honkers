@@ -21,7 +21,7 @@ pub contract PrivateVault {
             address::AztecAddress,
             constants::MAX_NOTE_HASH_READ_REQUESTS_PER_CALL,
         },
-        state_vars::{Owned, PrivateSet, PublicMutable},
+        state_vars::{Owned, PrivateSet, PublicImmutable, PublicMutable},
     };
 
     global PLATFORM_FEE_NUMERATOR: Field = 3;
@@ -30,11 +30,11 @@ pub contract PrivateVault {
     #[storage]
     struct Storage<Context> {
         admin: PublicMutable<AztecAddress, Context>,
-        fee_recipient: PublicMutable<AztecAddress, Context>,
-        token: PublicMutable<AztecAddress, Context>,
-        amm: PublicMutable<AztecAddress, Context>,
-        oracle: PublicMutable<AztecAddress, Context>,
-        deps_set: PublicMutable<Field, Context>,
+        // C-3 fix: PublicImmutable allows reads from private context (set-once config)
+        fee_recipient: PublicImmutable<AztecAddress, Context>,
+        token: PublicImmutable<AztecAddress, Context>,
+        amm: PublicImmutable<AztecAddress, Context>,
+        oracle: PublicImmutable<AztecAddress, Context>,
         paused: PublicMutable<Field, Context>,
         collateral: Owned<PrivateSet<CollateralNote, Context>, Context>,
         shares: Owned<PrivateSet<ShareNote, Context>, Context>,
@@ -45,20 +45,18 @@ pub contract PrivateVault {
     #[external("public")]
     fn constructor(admin: AztecAddress, fee_recipient: AztecAddress) {
         self.storage.admin.write(admin);
-        self.storage.fee_recipient.write(fee_recipient);
+        self.storage.fee_recipient.initialize(fee_recipient);
         self.storage.paused.write(0);
-        self.storage.deps_set.write(0);
     }
 
+    // set_dependencies initialises the immutable config addresses (one-time only).
     #[external("public")]
     fn set_dependencies(token: AztecAddress, amm: AztecAddress, oracle: AztecAddress) {
         let admin = self.storage.admin.read();
         assert(self.msg_sender() == admin, "Only admin can set dependencies");
-        assert(self.storage.deps_set.read() == 0, "Dependencies already set");
-        self.storage.token.write(token);
-        self.storage.amm.write(amm);
-        self.storage.oracle.write(oracle);
-        self.storage.deps_set.write(1);
+        self.storage.token.initialize(token);
+        self.storage.amm.initialize(amm);
+        self.storage.oracle.initialize(oracle);
     }
 
     #[external("private")]
@@ -90,21 +88,8 @@ pub contract PrivateVault {
         }
     }
 
-    // ---------------------------------------------------------------------------
-    // buy_shares
-    //
-    // Private execution:
-    //   1. Consume collateral notes, return change.
-    //   2. Mint a share note with the caller-supplied shares_out.
-    //   3. Enqueue _verify_swap (public) which calls AMM.swap() on-chain,
-    //      verifies actual output >= min_shares_out, and updates AMM reserves.
-    //
-    // The share note is written with the caller's stated shares_out. If the
-    // enqueued _verify_swap fails (slippage or AMM revert), the whole tx reverts
-    // and the note is never inserted into the tree.
-    //
-    // price_per_share is kept for share note bookkeeping (refund calculations).
-    // ---------------------------------------------------------------------------
+    // buy_shares: consumes collateral, mints share note, enqueues _verify_swap.
+    // _verify_swap calls AMM.swap() on-chain and enforces slippage in the same tx.
     #[external("private")]
     fn buy_shares(
         market_id: Field,
@@ -135,9 +120,6 @@ pub contract PrivateVault {
         let share_note = ShareNote::new(market_id, side, min_shares_out, price_per_share);
         self.storage.shares.at(buyer).insert(share_note).deliver(MessageDelivery.OFFCHAIN);
 
-        // Enqueue the public AMM swap + slippage verification.
-        // Runs atomically in the same tx after private execution completes.
-        // If AMM.swap() reverts or slippage fails, the entire tx reverts.
         self.context.call_public_function(
             self.context.this_address(),
             comptime { FunctionSelector::from_signature("_verify_swap(Field,Field,Field,Field)") },
@@ -146,13 +128,8 @@ pub contract PrivateVault {
         );
     }
 
-    // ---------------------------------------------------------------------------
-    // _verify_swap (public, only callable from buy_shares via enqueue)
-    //
-    // Calls AMM.swap() cross-contract (public->public, return value available),
-    // asserts actual shares >= min_shares_out, and lets the AMM update reserves.
-    // If this reverts, the whole tx (including the private buy_shares) reverts.
-    // ---------------------------------------------------------------------------
+    // _verify_swap: public, called by buy_shares enqueue only.
+    // Executes the real AMM swap and enforces slippage.
     #[external("public")]
     fn _verify_swap(
         market_id: Field,
@@ -199,10 +176,11 @@ pub contract PrivateVault {
         }
     }
 
-    // fee_recipient passed by caller (C-3 known issue - not fixed yet)
+    // C-3 fix: fee_recipient read from PublicImmutable (works in private context).
     #[external("private")]
-    fn claim_winnings(market_id: Field, fee_recipient: AztecAddress) {
+    fn claim_winnings(market_id: Field) {
         let sender = self.msg_sender();
+        let fee_recipient = self.storage.fee_recipient.read();
 
         let options = NoteGetterOptions::new();
         let notes = self.storage.winnings.at(sender).pop_notes(options);
@@ -231,9 +209,21 @@ pub contract PrivateVault {
         self.storage.collateral.at(fee_recipient).insert(fee_note).deliver(MessageDelivery.OFFCHAIN);
     }
 
+    // C-4 fix: enqueue Oracle.assert_market_voided before processing refunds.
+    // oracle is PublicImmutable so it can be read in private context.
     #[external("private")]
     fn refund_void_market(market_id: Field) {
         let sender = self.msg_sender();
+        let oracle_addr = self.storage.oracle.read();
+
+        // Enqueue static call to Oracle asserting the market is voided.
+        // Reverts the whole tx if the market is not in STATE_VOIDED.
+        self.context.static_call_public_function(
+            oracle_addr,
+            comptime { FunctionSelector::from_signature("assert_market_voided(Field)") },
+            [market_id],
+            false,
+        );
 
         let options = NoteGetterOptions::new();
         let notes = self.storage.shares.at(sender).pop_notes(options);
