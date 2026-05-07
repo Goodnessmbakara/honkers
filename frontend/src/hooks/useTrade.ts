@@ -17,10 +17,14 @@ const SCALE = 1_000_000n;
 function fieldLikeToBigInt(v: unknown): bigint {
   if (typeof v === "bigint") return v;
   if (typeof v === "number") return BigInt(Math.trunc(v));
+  if (typeof v === "string") return BigInt(v);
   if (v != null && typeof (v as { toBigInt?: () => bigint }).toBigInt === "function") {
     return (v as { toBigInt: () => bigint }).toBigInt();
   }
-  throw new Error("Unexpected field value from simulate");
+  if (v != null && typeof (v as { value?: unknown }).value !== "undefined") {
+    return fieldLikeToBigInt((v as { value: unknown }).value);
+  }
+  throw new Error(`Unexpected field value from simulate: ${typeof v} ${JSON.stringify(v)}`);
 }
 
 export function useTrade() {
@@ -48,7 +52,7 @@ export function useTrade() {
         if (!amm) throw new Error("AMM address not configured");
 
         const priceFn = params.side === "yes" ? "get_price_yes" : "get_price_no";
-        const priceRaw = await simulateView(amm, priceFn, [params.marketId]);
+        const priceRaw = await simulateView(amm, priceFn, [new Fr(params.marketId)]);
         const pricePerShare = fieldLikeToBigInt(priceRaw);
         if (pricePerShare === 0n) throw new Error("AMM price is zero (market not initialized?)");
 
