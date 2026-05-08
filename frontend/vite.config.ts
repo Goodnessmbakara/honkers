@@ -95,9 +95,10 @@ export default defineConfig({
     // If Vite tries to optimize them, it will try to pull bb.js into a shared chunk and fail
     // to resolve it during pre-bundling.
     //
-    // noDiscovery: don't scan source files for new deps on startup — use only the
-    // explicit include list. This prevents the >60s startup crawl that causes 504s at the ALB.
-    noDiscovery: true,
+    // holdUntilCrawlEnd: false — serve requests immediately instead of blocking
+    // all traffic until dep-optimization finishes. Without this, the >60s crawl
+    // over @aztec deps causes 504s at the ALB on cold start.
+    holdUntilCrawlEnd: false,
     exclude: [
       '@aztec/noir-acvm_js',
       '@aztec/noir-noirc_abi',
