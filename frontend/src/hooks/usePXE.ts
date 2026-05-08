@@ -149,6 +149,15 @@ export function usePXE() {
         if (abortRef.current?.signal.aborted) {
           throw new Error("Proof generation cancelled");
         }
+        const msg = err instanceof Error ? err.message : String(err);
+        // "self.is_some()" / "Failed to get a note" means the embedded PXE hasn't
+        // synced the contract's private notes from the historical block yet.
+        // Instruct the user to wait a moment and retry.
+        if (msg.includes("self.is_some") || msg.includes("Failed to get a note")) {
+          throw new Error(
+            "Browser Wallet is still syncing notes from the network. Please wait 30 seconds and try again."
+          );
+        }
         throw err;
       }
     },

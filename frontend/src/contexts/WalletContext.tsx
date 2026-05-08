@@ -295,6 +295,28 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
       }
 
+      // Wait for PXE to sync to current chain tip so note queries work immediately.
+      // Without this, private functions throw "Failed to get a note 'self.is_some()'"
+      // because the signing key note from account deployment hasn't been ingested yet.
+      setStatus("registering_account", "Syncing notes from chain…");
+      try {
+        const nodeBlockNumber = await node.getBlockNumber();
+        const pxe = (minimalWallet as unknown as { pxe: { getSyncedBlockHeader: () => Promise<{ globalVariables: { blockNumber: { toBigInt: () => bigint } } }> } }).pxe;
+        if (pxe?.getSyncedBlockHeader) {
+          const maxWait = 60_000;
+          const start = Date.now();
+          while (Date.now() - start < maxWait) {
+            const header = await pxe.getSyncedBlockHeader();
+            const pxeBlock = Number(header.globalVariables.blockNumber.toBigInt());
+            if (pxeBlock >= nodeBlockNumber) break;
+            console.log(`[WalletContext] PXE synced to block ${pxeBlock}, node at ${nodeBlockNumber}…`);
+            await new Promise((r) => setTimeout(r, 2000));
+          }
+        }
+      } catch {
+        // Non-fatal — proceed even if sync check fails
+      }
+
       const address = account.getAddress().toString();
       localStorage.setItem(STORAGE_KEY, address);
       localStorage.setItem(WALLET_TYPE_KEY, "embedded");
