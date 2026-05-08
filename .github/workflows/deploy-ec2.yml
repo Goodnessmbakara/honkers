@@ -52,7 +52,15 @@ jobs:
             --exclude "node_modules" \
             --exclude "**/node_modules" \
             --exclude ".pnpm-store" \
+            --exclude ".env" \
             ./ "${EC2_USER}@${EC2_HOST}:${APP_DIR}/"
+
+      - name: Write .env on EC2
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${{ secrets.ENV_FILE }}" | \
+            ssh -i ~/.ssh/deploy_key -p "${PORT}" "${EC2_USER}@${EC2_HOST}" \
+            "cat > ${APP_DIR}/.env"
 
       - name: Deploy docker stack on EC2
         run: |
