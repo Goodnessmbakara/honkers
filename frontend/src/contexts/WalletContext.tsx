@@ -267,39 +267,32 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       minimalWallet.addAccount(account);
 
       if (await accountManager.hasInitializer()) {
-        setStatus("checking_deployment", "Deploying account contract…");
-        try {
-          const { SponsoredFPCContractArtifact } = await import("@aztec/noir-contracts.js/SponsoredFPC");
-          const { getContractInstanceFromInstantiationParams } = await import("@aztec/stdlib/contract");
-          const { SponsoredFeePaymentMethod } = await import("@aztec/aztec.js/fee");
-          const fpcInstance = await getContractInstanceFromInstantiationParams(SponsoredFPCContractArtifact, { salt: FrCls.ZERO });
-          await (minimalWallet as unknown as { registerContract: (...a: unknown[]) => Promise<void> }).registerContract(fpcInstance, SponsoredFPCContractArtifact);
-          const paymentMethod = new SponsoredFeePaymentMethod(fpcInstance.address);
-          const deployMethod = await accountManager.getDeployMethod();
-          await deployMethod.send({ from: instance.address, fee: { paymentMethod } });
-          console.log("[WalletContext] Account contract deployed.");
-        } catch (deployErr) {
-          const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
-          // "self.is_some()" / "Failed to get a note" means the contract is already
-          // deployed but the fresh PXE hasn't synced the signing key note yet —
-          // treat this the same as "already deployed" and continue.
-          const isAlreadyDeployed =
-            msg.includes("already deployed") ||
-            msg.includes("DUPLICATE_NULLIFIER") ||
-            msg.includes("exists");
-          // "self.is_some" / "Failed to get a note" during deployment means the account
-          // secret is wrong — a new random secret was generated for an address that was
-          // never deployed. Reset everything and retry with a clean slate.
-          const isBadSecret =
-            msg.includes("self.is_some") ||
-            msg.includes("Failed to get a note");
-          if (isBadSecret) {
-            await resetEmbeddedPXEState();
-            throw new Error("Account data was corrupt — storage has been cleared. Please reconnect.");
+        setStatus("checking_deployment", "Checking account on chain…");
+        // Check on-chain BEFORE attempting deployment — avoids running proveTx
+        // on an already-deployed account which triggers self.is_some() in is_valid_impl.
+        const onChainInstance = await node.getContractInstance(instance.address).catch(() => null);
+        if (!onChainInstance) {
+          setStatus("checking_deployment", "Deploying account contract…");
+          try {
+            const { SponsoredFPCContractArtifact } = await import("@aztec/noir-contracts.js/SponsoredFPC");
+            const { getContractInstanceFromInstantiationParams } = await import("@aztec/stdlib/contract");
+            const { SponsoredFeePaymentMethod } = await import("@aztec/aztec.js/fee");
+            const fpcInstance = await getContractInstanceFromInstantiationParams(SponsoredFPCContractArtifact, { salt: FrCls.ZERO });
+            await (minimalWallet as unknown as { registerContract: (...a: unknown[]) => Promise<void> }).registerContract(fpcInstance, SponsoredFPCContractArtifact);
+            const paymentMethod = new SponsoredFeePaymentMethod(fpcInstance.address);
+            const deployMethod = await accountManager.getDeployMethod();
+            await deployMethod.send({ from: instance.address, fee: { paymentMethod } });
+            console.log("[WalletContext] Account contract deployed.");
+          } catch (deployErr) {
+            const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
+            const isAlreadyDeployed =
+              msg.includes("already deployed") ||
+              msg.includes("DUPLICATE_NULLIFIER") ||
+              msg.includes("exists");
+            if (!isAlreadyDeployed) throw deployErr;
           }
-          if (!isAlreadyDeployed) {
-            throw deployErr;
-          }
+        } else {
+          console.log("[WalletContext] Account already on-chain, skipping deploy.");
         }
       }
 
