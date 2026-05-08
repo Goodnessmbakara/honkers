@@ -286,35 +286,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           const isAlreadyDeployed =
             msg.includes("already deployed") ||
             msg.includes("DUPLICATE_NULLIFIER") ||
-            msg.includes("exists") ||
+            msg.includes("exists");
+          // "self.is_some" / "Failed to get a note" during deployment means the account
+          // secret is wrong — a new random secret was generated for an address that was
+          // never deployed. Reset everything and retry with a clean slate.
+          const isBadSecret =
             msg.includes("self.is_some") ||
             msg.includes("Failed to get a note");
+          if (isBadSecret) {
+            await resetEmbeddedPXEState();
+            throw new Error("Account data was corrupt — storage has been cleared. Please reconnect.");
+          }
           if (!isAlreadyDeployed) {
             throw deployErr;
           }
         }
-      }
-
-      // Wait for PXE to sync to current chain tip so note queries work immediately.
-      // Without this, private functions throw "Failed to get a note 'self.is_some()'"
-      // because the signing key note from account deployment hasn't been ingested yet.
-      setStatus("registering_account", "Syncing notes from chain…");
-      try {
-        const nodeBlockNumber = await node.getBlockNumber();
-        const pxe = (minimalWallet as unknown as { pxe: { getSyncedBlockHeader: () => Promise<{ globalVariables: { blockNumber: { toBigInt: () => bigint } } }> } }).pxe;
-        if (pxe?.getSyncedBlockHeader) {
-          const maxWait = 60_000;
-          const start = Date.now();
-          while (Date.now() - start < maxWait) {
-            const header = await pxe.getSyncedBlockHeader();
-            const pxeBlock = Number(header.globalVariables.blockNumber.toBigInt());
-            if (pxeBlock >= nodeBlockNumber) break;
-            console.log(`[WalletContext] PXE synced to block ${pxeBlock}, node at ${nodeBlockNumber}…`);
-            await new Promise((r) => setTimeout(r, 2000));
-          }
-        }
-      } catch {
-        // Non-fatal — proceed even if sync check fails
       }
 
       const address = account.getAddress().toString();

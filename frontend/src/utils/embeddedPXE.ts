@@ -37,8 +37,13 @@ async function nukeStaleDB() {
 export async function resetEmbeddedPXEState() {
   pxePromise = null;
   await nukeStaleDB();
+  // Clear ALL wallet-related localStorage so the next session gets a clean slate.
+  // Failing to clear vault-wrap-key or wallet-secret-v2 causes loadDecryptedSecretHex()
+  // to return null on next connect → random new secret → undeployed account → self.is_some().
   localStorage.removeItem("honkers:wallet-address");
   localStorage.removeItem("honkers:wallet-secret");
+  localStorage.removeItem("honkers:wallet-secret-v2");
+  localStorage.removeItem("honkers:vault-wrap-key");
   localStorage.removeItem(ROLLUP_KEY);
 }
 
