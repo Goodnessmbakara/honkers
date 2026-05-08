@@ -15,5 +15,8 @@ RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 # Copy frontend source (artifacts symlink resolves to /app/contracts/target)
 COPY frontend/ ./
 
+# Pre-bundle deps so first-request latency is low (avoids 502 on large dynamic imports)
+RUN pnpm vite optimize 2>/dev/null || true
+
 # Vite dev server listens on all interfaces
 CMD ["pnpm", "dev", "--host", "0.0.0.0"]

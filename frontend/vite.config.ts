@@ -161,6 +161,13 @@ export default defineConfig({
   server: {
     // Allow ALB/CloudFront host headers in production deployments.
     allowedHosts: true,
+    // Warm up frequently used heavy modules on server start to avoid
+    // 502 timeouts on first request in production (Browser PXE path).
+    warmup: {
+      clientFiles: [
+        './src/utils/embeddedPXE.ts',
+      ],
+    },
     headers: {
       // Required for SharedArrayBuffer (Barretenberg WASM multi-threading)
       // MUST be same-origin + credentialless for crossOriginIsolated === true
