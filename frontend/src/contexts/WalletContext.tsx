@@ -78,6 +78,9 @@ interface WalletContextValue extends WalletState {
   connectToProvider: (provider: WalletProvider) => Promise<void>;
   connectWithEmbeddedPXE: () => Promise<void>;
 
+  // Wallet type — "azguard" | "embedded" | "sdk:..." | null
+  walletType: string | null;
+
   // Legacy compat
   connect: () => Promise<void>;
   disconnect: () => void;
@@ -102,6 +105,7 @@ const WalletCtx = createContext<WalletContextValue>({
   discoverStatus: "idle",
   connectToProvider: async () => {},
   connectWithEmbeddedPXE: async () => {},
+  walletType: null,
   connect: async () => {},
   disconnect: () => {},
   walletLoading: false,
@@ -119,6 +123,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [aztecNode, setAztecNode] = useState<AztecNode | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
+  const [walletType, setWalletType] = useState<string | null>(() => localStorage.getItem(WALLET_TYPE_KEY));
 
   // Picker
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -284,6 +289,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       const address = account.getAddress().toString();
       localStorage.setItem(STORAGE_KEY, address);
       localStorage.setItem(WALLET_TYPE_KEY, "embedded");
+      setWalletType("embedded");
       setAztecNode(node);
       setWallet(minimalWallet as unknown as Wallet);
       setStatus("connected", "Connected via Browser PXE");
@@ -366,10 +372,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
             : String(firstAccount);
 
         localStorage.setItem(STORAGE_KEY, address);
-        const walletType = provider.name.toLowerCase().includes("azguard")
+        const wt = provider.name.toLowerCase().includes("azguard")
           ? "azguard"
           : `sdk:${provider.name}`;
-        localStorage.setItem(WALLET_TYPE_KEY, walletType);
+        localStorage.setItem(WALLET_TYPE_KEY, wt);
+        setWalletType(wt);
         const node = await getAztecNode();
         setAztecNode(node);
         setWallet(connectedWallet);
@@ -399,6 +406,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     activeProviderRef.current = null;
     setWallet(null);
     setAztecNode(null);
+    setWalletType(null);
     setState({ connected: false, address: null, syncing: false });
     setConnectStage("idle");
     setConnectDetail(null);
@@ -504,6 +512,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         discoverStatus,
         connectToProvider,
         connectWithEmbeddedPXE,
+        walletType,
         connect,
         disconnect,
         walletLoading: false,

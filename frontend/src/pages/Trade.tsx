@@ -15,12 +15,15 @@ import { TxStatus } from "../components/trading/TxStatus";
 import { OddsDisplay } from "../components/market/OddsDisplay";
 import { PrivacyCallout } from "../components/safety/PrivacyCallout";
 import { WalletConnect } from "../components/wallet/WalletConnect";
+import { useWalletContext } from "../contexts/WalletContext";
 
 export function Trade() {
   const { id } = useParams<{ id: string }>();
   const marketId = id ? Number(id) : null;
   const { market, loading, error: marketError } = useMarketDetail(marketId);
   const { connected, address } = useWallet();
+  const { walletType, connectWithEmbeddedPXE, disconnect } = useWalletContext();
+  const isAzguard = walletType === "azguard";
   const { balance } = usePortfolio(address);
   const { step, elapsed, txHash, txHashes, error, execute, cancel, reset } = useTrade();
   const { request: requestFaucet, loading: faucetLoading, error: faucetError } = useFaucet(address);
@@ -61,6 +64,45 @@ export function Trade() {
       <div style={{ marginBottom: "var(--space-4)" }}>
         <OddsDisplay yesPrice={market.yesPrice} noPrice={market.noPrice} />
       </div>
+
+      {/* Azguard incompatibility warning */}
+      {isAzguard && connected && (
+        <div style={{
+          marginBottom: "var(--space-4)",
+          padding: "var(--space-3) var(--space-4)",
+          background: "rgba(234,179,8,0.08)",
+          border: "1px solid rgba(234,179,8,0.3)",
+          borderRadius: "var(--radius-md)",
+          fontSize: "0.8125rem",
+          color: "var(--text-primary)",
+          display: "flex",
+          flexDirection: "column",
+          gap: "var(--space-2)",
+        }}>
+          <div style={{ fontWeight: 600, color: "#ca8a04" }}>
+            Azguard does not support private transactions yet
+          </div>
+          <div style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
+            Trading requires Browser Wallet (in-app PXE). Switch wallets to continue.
+          </div>
+          <button
+            onClick={async () => { disconnect(); await connectWithEmbeddedPXE(); }}
+            style={{
+              alignSelf: "flex-start",
+              padding: "5px 14px",
+              background: "var(--accent)",
+              color: "#fff",
+              border: "none",
+              borderRadius: "var(--radius-full)",
+              cursor: "pointer",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+            }}
+          >
+            Switch to Browser Wallet
+          </button>
+        </div>
+      )}
 
       {/* Proof in progress */}
       {step && step !== "confirmed" && step !== "failed" && (
