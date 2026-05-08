@@ -94,6 +94,10 @@ export default defineConfig({
     // Additionally, we exclude aztec.js, foundation, and native because they depend on bb.js.
     // If Vite tries to optimize them, it will try to pull bb.js into a shared chunk and fail
     // to resolve it during pre-bundling.
+    //
+    // noDiscovery: don't scan source files for new deps on startup — use only the
+    // explicit include list. This prevents the >60s startup crawl that causes 504s at the ALB.
+    noDiscovery: true,
     exclude: [
       '@aztec/noir-acvm_js',
       '@aztec/noir-noirc_abi',
@@ -161,6 +165,10 @@ export default defineConfig({
   server: {
     // Allow ALB/CloudFront host headers in production deployments.
     allowedHosts: true,
+    // Don't block requests while dep-optimization runs on startup.
+    // Without this, Vite holds ALL requests until it finishes crawling
+    // @aztec deps (can take >60s) causing 504s at the ALB.
+    hmr: false,
     // Warm up frequently used heavy modules on server start to avoid
     // 502 timeouts on first request in production (Browser PXE path).
     warmup: {
