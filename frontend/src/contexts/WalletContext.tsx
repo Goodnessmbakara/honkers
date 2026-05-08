@@ -280,7 +280,16 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           console.log("[WalletContext] Account contract deployed.");
         } catch (deployErr) {
           const msg = deployErr instanceof Error ? deployErr.message : String(deployErr);
-          if (!msg.includes("already deployed") && !msg.includes("DUPLICATE_NULLIFIER") && !msg.includes("exists")) {
+          // "self.is_some()" / "Failed to get a note" means the contract is already
+          // deployed but the fresh PXE hasn't synced the signing key note yet —
+          // treat this the same as "already deployed" and continue.
+          const isAlreadyDeployed =
+            msg.includes("already deployed") ||
+            msg.includes("DUPLICATE_NULLIFIER") ||
+            msg.includes("exists") ||
+            msg.includes("self.is_some") ||
+            msg.includes("Failed to get a note");
+          if (!isAlreadyDeployed) {
             throw deployErr;
           }
         }
