@@ -118,6 +118,11 @@ export default defineConfig({
     // Explicitly include polyfills so they are pre-bundled and available to the 
     // non-optimized @aztec packages above.
     include: [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react/jsx-runtime',
+      'react-router-dom',
       'buffer',
       'crypto-browserify',
       'stream-browserify',
