@@ -27,7 +27,7 @@ RUN VITE_AZTEC_RPC_URL=/rpc \
     VITE_ORACLE_ADDRESS=0x29e13066f73f7da9fbdbf3ac0870607a2bc21bcf00bd20cec35d141f025a2c92 \
     VITE_PRIVATE_VAULT_ADDRESS=0x303913f82417065658b5a8687317cb83ce3b46c4ecc52d4f1ff1004444a1f128 \
     VITE_MARKET_FACTORY_ADDRESS=0x243d77c08c93f5e7d4f40c384feb39130b3a85d20c21c9a88fc69aa503bd3cfb \
-    pnpm vite optimize 2>&1 | tail -3 || true
+    pnpm vite optimize
 
 # Vite dev server listens on all interfaces
 CMD ["pnpm", "dev", "--host", "0.0.0.0"]
