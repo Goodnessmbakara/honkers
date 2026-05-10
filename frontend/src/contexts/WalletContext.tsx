@@ -270,7 +270,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         setStatus("checking_deployment", "Checking account on chain…");
         // Check on-chain BEFORE attempting deployment — avoids running proveTx
         // on an already-deployed account which triggers self.is_some() in is_valid_impl.
-        const onChainInstance = await node.getContractInstance(instance.address).catch(() => null);
+        const onChainInstance = await node.getContract(instance.address).catch(() => null);
         if (!onChainInstance) {
           setStatus("checking_deployment", "Deploying account contract…");
           try {
