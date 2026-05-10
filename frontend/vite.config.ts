@@ -54,7 +54,13 @@ const nodeBuiltinsShim = (): Plugin => ({
   },
 });
 
+/** Writable paths outside symlink-heavy node_modules avoid EXDEV on deps rename in Docker. */
+const cacheDir =
+  process.env.HONKERS_VITE_CACHE_DIR?.trim() ||
+  path.resolve(__dirname, 'node_modules/.vite');
+
 export default defineConfig({
+  cacheDir,
   plugins: [
     nodeBuiltinsShim(), // Must be first — intercept before nodePolyfills
     react(),

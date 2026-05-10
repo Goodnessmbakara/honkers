@@ -15,6 +15,10 @@ RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 # Copy frontend source (artifacts symlink resolves to /app/contracts/target)
 COPY frontend/ ./
 
+# Vite commits optimizeDeps by renaming dirs under cacheDir; with pnpm + overlay FS that can throw EXDEV
+# inside node_modules/.vite. Use /tmp so rename stays on one filesystem (fixes ALB 504s on polyfill chunks).
+ENV HONKERS_VITE_CACHE_DIR=/tmp/honkers-vite-cache
+
 # Pre-build the Vite dep cache so cold starts never block requests.
 # WITHOUT --force: Vite uses this cache as long as pnpm-lock.yaml and
 # optimizeDeps config match — zero blocking on container start.
