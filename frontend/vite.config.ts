@@ -54,7 +54,11 @@ const nodeBuiltinsShim = (): Plugin => ({
   },
 });
 
-/** Writable paths outside symlink-heavy node_modules avoid EXDEV on deps rename in Docker. */
+/**
+ * Docker+pnpm: `node_modules/.vite` can hit EXDEV on optimizeDeps rename.
+ * Cache MUST stay inside `server.fs.allow` and ideally inside project root: otherwise Vite serves deps as
+ * `/@fs/tmp/...` (outside root), those reads aren't allowed → stalled responses → ALB 504.
+ */
 const cacheDir =
   process.env.HONKERS_VITE_CACHE_DIR?.trim() ||
   path.resolve(__dirname, 'node_modules/.vite');

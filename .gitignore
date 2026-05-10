@@ -6,6 +6,7 @@ ui/
 
 # Node
 node_modules/
+frontend/.vite-cache/
 dist/
 pnpm-lock.yaml
 
