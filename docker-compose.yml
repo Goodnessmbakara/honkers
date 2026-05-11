@@ -16,11 +16,21 @@ services:
       KEEPER_AUTO_VOID_MODE: ${KEEPER_AUTO_VOID_MODE:-alert_only}
     restart: unless-stopped
 
-  # ── Frontend (Vite dev server) ──────────────────────────────────────────────
+  # ── Frontend (static dist + nginx; /rpc → AZTEC_SANDBOX_URL) ───────────────
   frontend:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_AZTEC_RPC_URL: /rpc
+        VITE_MARKET_FACTORY_ADDRESS: ${MARKET_FACTORY_ADDRESS:-}
+        VITE_AMM_ADDRESS: ${AMM_ADDRESS:-}
+        VITE_ORACLE_ADDRESS: ${ORACLE_ADDRESS:-}
+        VITE_USDH_ADDRESS: ${USDH_ADDRESS:-}
+        VITE_PRIVATE_VAULT_ADDRESS: ${PRIVATE_VAULT_ADDRESS:-}
+        VITE_ADMIN_ADDRESSES: ${VITE_ADMIN_ADDRESSES:-${ADMIN_ADDRESS:-}}
+        VITE_SPONSORED_FPC_ADDRESS: ${SPONSORED_FPC_ADDRESS:-}
+        VITE_FEE_RECIPIENT_ADDRESS: ${ADMIN_ADDRESS:-}
     container_name: honkers-frontend
     ports:
       - "5173:5173"
