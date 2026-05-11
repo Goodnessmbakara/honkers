@@ -88,6 +88,20 @@ export default defineConfig({
   },
   resolve: {
     preserveSymlinks: false,
+    // One physical copy of each @aztec package in the Rollup graph — avoids
+    // "X is not a constructor" / broken static {} when prod splits duplicate SDK copies.
+    dedupe: [
+      '@aztec/accounts',
+      '@aztec/aztec.js',
+      '@aztec/foundation',
+      '@aztec/kv-store',
+      '@aztec/noir-contracts.js',
+      '@aztec/protocol-contracts',
+      '@aztec/pxe',
+      '@aztec/stdlib',
+      '@aztec/wallet-sdk',
+      '@aztec/wallets',
+    ],
     alias: {
       pino: 'pino/browser.js',
       // CJS → ESM shims required by @aztec/* dependency chain
@@ -164,6 +178,16 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('@aztec') || id.includes('bb.js') || id.includes('barretenberg')) {
+            return 'aztec-sdk';
+          }
+          return undefined;
+        },
+      },
+    },
     commonjsOptions: {
       // Force all @aztec/* to be treated as pure ESM — prevents dual CJS/ESM processing
       // that causes class identity errors and double-initialization of singletons.
