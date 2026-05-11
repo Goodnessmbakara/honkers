@@ -13,13 +13,13 @@
     "@azguardwallet/types": "^0.9.0",
     "@aztec/accounts": "4.2.0",
     "@aztec/aztec.js": "4.2.0",
-    "@aztec/foundation": "^4.2.0",
+    "@aztec/foundation": "4.2.0",
     "@aztec/kv-store": "4.2.0",
     "@aztec/noir-contracts.js": "4.2.0",
     "@aztec/protocol-contracts": "4.2.0",
     "@aztec/pxe": "4.2.0",
     "@aztec/stdlib": "4.2.0",
-    "@aztec/wallet-sdk": "^4.2.0",
+    "@aztec/wallet-sdk": "4.2.0",
     "@aztec/wallets": "4.2.0",
     "buffer": "^6.0.3",
     "change-case": "^5.4.4",
@@ -57,5 +57,26 @@
     "vite-plugin-node-polyfills": "^0.26.0",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "@aztec/accounts": "4.2.0",
+      "@aztec/aztec.js": "4.2.0",
+      "@aztec/bb.js": "4.2.0",
+      "@aztec/constants": "4.2.0",
+      "@aztec/ethereum": "4.2.0",
+      "@aztec/foundation": "4.2.0",
+      "@aztec/kv-store": "4.2.0",
+      "@aztec/native": "4.2.0",
+      "@aztec/noir-acvm_js": "4.2.0",
+      "@aztec/noir-contracts.js": "4.2.0",
+      "@aztec/noir-noirc_abi": "4.2.0",
+      "@aztec/noir-protocol-circuits-types": "4.2.0",
+      "@aztec/protocol-contracts": "4.2.0",
+      "@aztec/pxe": "4.2.0",
+      "@aztec/stdlib": "4.2.0",
+      "@aztec/wallet-sdk": "4.2.0",
+      "@aztec/wallets": "4.2.0"
+    }
   }
 }
