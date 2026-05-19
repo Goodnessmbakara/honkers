@@ -84,6 +84,9 @@ export default defineConfig({
       crypto: 'crypto-browserify',
       stream: 'stream-browserify',
       'hash.js': 'hash.js/lib/hash.js',
+      // Stub out bb.js (barretenberg WASM prover) — not needed in browser.
+      // All proving happens in the Azguard Chrome extension.
+      '@aztec/bb.js': path.resolve(__dirname, 'src/stubs/bb-stub.js'),
     },
   },
   optimizeDeps: {
@@ -147,6 +150,9 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // Keep all @aztec/* in one chunk to preserve class constructor init order.
+          // embeddedPXE (which pulls bb.js/barretenberg/pxe/client/bundle) is a
+          // dynamic import so it will be split into its own lazy chunk automatically.
           if (id.includes('@aztec') || id.includes('bb.js') || id.includes('barretenberg')) {
             return 'aztec-sdk';
           }

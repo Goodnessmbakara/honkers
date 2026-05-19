@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { X, Loader2, CheckCircle2, ExternalLink, WifiOff, Globe, Trash2 } from "lucide-react";
 import { useWalletContext } from "../../contexts/WalletContext";
-import { resetEmbeddedPXEState } from "../../utils/embeddedPXE";
+const loadEmbeddedPXE = () => import("../../utils/embeddedPXE");
 import type { WalletProvider } from "@aztec/wallet-sdk/manager";
 
 // Known wallets shown as static cards — they light up when discovered
@@ -248,6 +248,7 @@ export function WalletPickerModal() {
               {isStaleCache && (
                 <button
                   onClick={async () => {
+                    const { resetEmbeddedPXEState } = await loadEmbeddedPXE();
                     await resetEmbeddedPXEState();
                     sessionStorage.removeItem("honkers:pxe-recovery");
                     window.location.reload();

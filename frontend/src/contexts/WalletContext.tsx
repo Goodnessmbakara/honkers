@@ -28,7 +28,8 @@ import { WalletManager, type WalletProvider } from "@aztec/wallet-sdk/manager";
 import { Fr } from "@aztec/aztec.js/fields";
 import { aztecConfig } from "../config/aztec";
 import type { WalletConnectStage, WalletConnectTimelineEntry, WalletState } from "../types";
-import { getOrCreateEmbeddedPXE, resetEmbeddedPXEState } from "../utils/embeddedPXE";
+// Lazy import — keeps PXE/prover code out of the initial bundle (Azguard path doesn't need it)
+const embeddedPXE = () => import("../utils/embeddedPXE");
 import { loadDecryptedSecretHex, persistEncryptedSecret } from "../utils/browserSecretVault";
 import { AzguardWallet, asWallet } from "../utils/azguardWallet";
 
@@ -230,6 +231,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setWalletError(null);
 
     try {
+      const { getOrCreateEmbeddedPXE } = await embeddedPXE();
       const { wallet: minimalWallet, aztecNode: node } = await getOrCreateEmbeddedPXE(aztecConfig.pxeUrl);
 
       setStatus("registering_account", "Setting up account…");
@@ -301,6 +303,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       );
       if (isStale && !sessionStorage.getItem("honkers:pxe-recovery")) {
         sessionStorage.setItem("honkers:pxe-recovery", "1");
+        const { resetEmbeddedPXEState } = await embeddedPXE();
         await resetEmbeddedPXEState();
         setState({ connected: false, address: null, syncing: false });
         return connectWithEmbeddedPXE();
