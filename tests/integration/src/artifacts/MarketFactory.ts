@@ -9,10 +9,23 @@ import { EthAddress } from '@aztec/aztec.js/addresses';
 import { Fr, Point } from '@aztec/aztec.js/fields';
 import { type PublicKey, PublicKeys } from '@aztec/aztec.js/keys';
 import type { Wallet } from '@aztec/aztec.js/wallet';
-import MarketFactoryContractArtifactJson from '../../../../contracts/target/market_factory-MarketFactory.json' with { type: 'json' };
+import MarketFactoryContractArtifactJson from '../contracts/target/market_factory-MarketFactory.json' with { type: 'json' };
 export const MarketFactoryContractArtifact = loadContractArtifact(MarketFactoryContractArtifactJson as NoirCompiledContract);
 
 
+      export type MarketCreated = {
+        market_id: FieldLike
+question_0: FieldLike
+question_1: FieldLike
+question_2: FieldLike
+criteria_0: FieldLike
+criteria_1: FieldLike
+source_0: FieldLike
+source_1: FieldLike
+end_date: FieldLike
+creator: FieldLike
+      }
+    
 
 /**
  * Type-safe interface for contract MarketFactory;
@@ -144,8 +157,8 @@ market_bond: {
     /** constructor(admin: struct) */
     constructor: ((admin: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** create_market(question_hash: field, criteria_hash: field, source_hash: field, end_date: field, bond_amount: field) */
-    create_market: ((question_hash: FieldLike, criteria_hash: FieldLike, source_hash: FieldLike, end_date: FieldLike, bond_amount: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** create_market(question_hash: field, criteria_hash: field, source_hash: field, end_date: field, bond_amount: field, question_0: field, question_1: field, question_2: field, criteria_0: field, criteria_1: field, source_0: field, source_1: field) */
+    create_market: ((question_hash: FieldLike, criteria_hash: FieldLike, source_hash: FieldLike, end_date: FieldLike, bond_amount: FieldLike, question_0: FieldLike, question_1: FieldLike, question_2: FieldLike, criteria_0: FieldLike, criteria_1: FieldLike, source_0: FieldLike, source_1: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** get_admin() */
     get_admin: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -159,8 +172,8 @@ market_bond: {
     /** is_whitelisted(creator: struct) */
     is_whitelisted: ((creator: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** process_message(message_ciphertext: struct, message_context: struct) */
-    process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** offchain_receive(messages: struct) */
+    offchain_receive: ((messages: { ciphertext: FieldLike[], recipient: AztecAddressLike, tx_hash: OptionLike<FieldLike>, anchor_block_timestamp: (bigint | number) }[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** public_dispatch(selector: field) */
     public_dispatch: ((selector: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -171,9 +184,84 @@ market_bond: {
     /** set_dependencies(amm: struct, oracle: struct, token: struct) */
     set_dependencies: ((amm: AztecAddressLike, oracle: AztecAddressLike, token: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** sync_state() */
-    sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** sync_state(scope: struct) */
+    sync_state: ((scope: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
   };
 
+  
+    public static get events(): { MarketCreated: {abiType: AbiType, eventSelector: EventSelector, fieldNames: string[] } } {
+    return {
+      MarketCreated: {
+        abiType: {
+    "kind": "struct",
+    "fields": [
+        {
+            "name": "market_id",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "question_0",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "question_1",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "question_2",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "criteria_0",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "criteria_1",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "source_0",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "source_1",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "end_date",
+            "type": {
+                "kind": "field"
+            }
+        },
+        {
+            "name": "creator",
+            "type": {
+                "kind": "field"
+            }
+        }
+    ],
+    "path": "MarketFactory::MarketCreated"
+},
+        eventSelector: EventSelector.fromString("0x3589ce5e"),
+        fieldNames: ["market_id","question_0","question_1","question_2","criteria_0","criteria_1","source_0","source_1","end_date","creator"],
+      }
+    };
+  }
   
 }

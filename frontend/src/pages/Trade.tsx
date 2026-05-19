@@ -3,6 +3,7 @@
 // fee=0, proof UX (FR-T-1 through FR-T-5)
 // ---------------------------------------------------------------------------
 
+import { useEffect } from "react";
 import { useParams } from "react-router-dom";
 import { useMarketDetail } from "../hooks/useMarkets";
 import { useTrade } from "../hooks/useTrade";
@@ -19,10 +20,15 @@ import { WalletConnect } from "../components/wallet/WalletConnect";
 export function Trade() {
   const { id } = useParams<{ id: string }>();
   const marketId = id ? Number(id) : null;
-  const { market, loading, error: marketError } = useMarketDetail(marketId);
+  const { market, loading, error: marketError, refetch } = useMarketDetail(marketId);
   const { connected, address } = useWallet();
   const { balance } = usePortfolio(address);
   const { step, elapsed, txHash, txHashes, error, execute, cancel, reset } = useTrade();
+
+  // Refetch prices from chain after a trade confirms so odds update immediately
+  useEffect(() => {
+    if (step === "confirmed") refetch();
+  }, [step, refetch]);
   const { request: requestFaucet, loading: faucetLoading, error: faucetError } = useFaucet(address);
 
   if (loading) {

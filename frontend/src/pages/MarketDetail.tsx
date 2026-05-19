@@ -3,6 +3,7 @@
 // status badge, privacy caveat (FR-M-2 through FR-M-5)
 // ---------------------------------------------------------------------------
 
+import { useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useMarketDetail } from "../hooks/useMarkets";
 import { MarketStatusBadge } from "../components/market/MarketStatusBadge";
@@ -14,7 +15,13 @@ import { PrivacyCallout } from "../components/safety/PrivacyCallout";
 export function MarketDetail() {
   const { id } = useParams<{ id: string }>();
   const marketId = id ? Number(id) : null;
-  const { market, loading, error } = useMarketDetail(marketId);
+  const { market, loading, error, refetch } = useMarketDetail(marketId);
+
+  // Poll prices every 10s so odds stay current without a full page reload
+  useEffect(() => {
+    const interval = setInterval(refetch, 10_000);
+    return () => clearInterval(interval);
+  }, [refetch]);
 
   if (loading) {
     return (

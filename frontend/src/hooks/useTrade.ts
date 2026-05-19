@@ -37,18 +37,37 @@ export function useTrade() {
         const amm = aztecConfig.contracts.amm;
         if (!amm) throw new Error("AMM address not configured");
 
-        // Read price directly from chain storage — no wallet/Azguard utility call
+        // Read reserves directly from chain storage — constant-product formula
         const mid = BigInt(params.marketId);
-        const { yesPrice, noPrice } = await fetchAmmPrices(amm, mid);
-        const rawPrice = params.side === "yes" ? yesPrice : noPrice;
-        const pricePerShare = BigInt(Math.round(rawPrice * Number(SCALE)));
-        if (pricePerShare === 0n) throw new Error("AMM price is zero (market not initialized?)");
+        const { reserveYes, reserveNo } = await fetchAmmPrices(amm, mid);
+        if (reserveYes === 0n && reserveNo === 0n) throw new Error("AMM market not initialized");
 
         const collateralAmount = BigInt(params.amount);
-        const expectedShares = (collateralAmount * SCALE) / pricePerShare;
+
+        // AMM swap: buying YES means paying collateral into NO reserve, receiving from YES reserve
+        // (and vice versa for NO). Mirror the contract's swap logic exactly:
+        //   new_reserve_in  = reserve_in + amount_in
+        //   new_reserve_out = k / new_reserve_in
+        //   shares_out      = reserve_out - new_reserve_out
+        const [reserveIn, reserveOut] = params.side === "yes"
+          ? [reserveNo, reserveYes]
+          : [reserveYes, reserveNo];
+        const k = reserveIn * reserveOut;
+        const newReserveIn = reserveIn + collateralAmount;
+        const newReserveOut = k / newReserveIn;
+        const expectedShares = reserveOut - newReserveOut;
+        if (expectedShares === 0n) throw new Error("Trade size too small");
+
         const bps = BigInt(Math.min(10_000, Math.max(0, params.maxSlippage)));
         const minSharesOut = (expectedShares * (10_000n - bps)) / 10_000n;
         if (minSharesOut === 0n) throw new Error("Trade size too small after slippage");
+
+        // pricePerShare used by the contract for the fee-juice calc — derive from reserves
+        const rawPrice = params.side === "yes"
+          ? Number((reserveNo * SCALE) / (reserveYes + reserveNo)) / Number(SCALE)
+          : Number((reserveYes * SCALE) / (reserveYes + reserveNo)) / Number(SCALE);
+        const pricePerShare = BigInt(Math.round(rawPrice * Number(SCALE)));
+        if (pricePerShare === 0n) throw new Error("AMM price is zero");
 
         const sideField = params.side === "yes" ? 1 : 0;
 

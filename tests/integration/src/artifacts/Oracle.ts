@@ -9,7 +9,7 @@ import { EthAddress } from '@aztec/aztec.js/addresses';
 import { Fr, Point } from '@aztec/aztec.js/fields';
 import { type PublicKey, PublicKeys } from '@aztec/aztec.js/keys';
 import type { Wallet } from '@aztec/aztec.js/wallet';
-import OracleContractArtifactJson from '../../../../contracts/target/oracle-Oracle.json' with { type: 'json' };
+import OracleContractArtifactJson from '../contracts/target/oracle-Oracle.json' with { type: 'json' };
 export const OracleContractArtifact = loadContractArtifact(OracleContractArtifactJson as NoirCompiledContract);
 
 
@@ -126,6 +126,9 @@ disputer: {
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
+    /** assert_market_voided(market_id: field) */
+    assert_market_voided: ((market_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
     /** challenge_seconds_remaining(market_id: field, current_timestamp: field) */
     challenge_seconds_remaining: ((market_id: FieldLike, current_timestamp: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
@@ -159,8 +162,8 @@ disputer: {
     /** is_void_eligible(market_id: field, current_timestamp: field) */
     is_void_eligible: ((market_id: FieldLike, current_timestamp: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** process_message(message_ciphertext: struct, message_context: struct) */
-    process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** offchain_receive(messages: struct) */
+    offchain_receive: ((messages: { ciphertext: FieldLike[], recipient: AztecAddressLike, tx_hash: OptionLike<FieldLike>, anchor_block_timestamp: (bigint | number) }[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** propose_resolution(market_id: field, outcome: field) */
     propose_resolution: ((market_id: FieldLike, outcome: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -177,8 +180,8 @@ disputer: {
     /** set_dependencies(amm: struct) */
     set_dependencies: ((amm: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** sync_state() */
-    sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** sync_state(scope: struct) */
+    sync_state: ((scope: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** void_market(market_id: field) */
     void_market: ((market_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

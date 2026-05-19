@@ -9,7 +9,7 @@ import { EthAddress } from '@aztec/aztec.js/addresses';
 import { Fr, Point } from '@aztec/aztec.js/fields';
 import { type PublicKey, PublicKeys } from '@aztec/aztec.js/keys';
 import type { Wallet } from '@aztec/aztec.js/wallet';
-import PrivateVaultContractArtifactJson from '../../../../contracts/target/private_vault-PrivateVault.json' with { type: 'json' };
+import PrivateVaultContractArtifactJson from '../contracts/target/private_vault-PrivateVault.json' with { type: 'json' };
 export const PrivateVaultContractArtifact = loadContractArtifact(PrivateVaultContractArtifactJson as NoirCompiledContract);
 
 
@@ -90,7 +90,7 @@ export class PrivateVaultContract extends ContractBase {
   }
   
 
-  public static get storage(): ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'deps_set' | 'paused' | 'collateral' | 'shares' | 'winnings'> {
+  public static get storage(): ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'paused' | 'collateral' | 'shares' | 'winnings'> {
       return {
         admin: {
       slot: new Fr(1n),
@@ -99,41 +99,41 @@ fee_recipient: {
       slot: new Fr(2n),
     },
 token: {
-      slot: new Fr(3n),
-    },
-amm: {
       slot: new Fr(4n),
     },
-oracle: {
-      slot: new Fr(5n),
-    },
-deps_set: {
+amm: {
       slot: new Fr(6n),
     },
-paused: {
-      slot: new Fr(7n),
-    },
-collateral: {
+oracle: {
       slot: new Fr(8n),
     },
+paused: {
+      slot: new Fr(10n),
+    },
+collateral: {
+      slot: new Fr(11n),
+    },
 shares: {
-      slot: new Fr(9n),
+      slot: new Fr(12n),
     },
 winnings: {
-      slot: new Fr(10n),
+      slot: new Fr(13n),
     }
-      } as ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'deps_set' | 'paused' | 'collateral' | 'shares' | 'winnings'>;
+      } as ContractStorageLayout<'admin' | 'fee_recipient' | 'token' | 'amm' | 'oracle' | 'paused' | 'collateral' | 'shares' | 'winnings'>;
     }
     
 
   /** Type-safe wrappers for the public methods exposed by the contract. */
   public declare methods: {
     
-    /** buy_shares(market_id: field, side: field, collateral_amount: field, shares_out: field, price_per_share: field) */
-    buy_shares: ((market_id: FieldLike, side: FieldLike, collateral_amount: FieldLike, shares_out: FieldLike, price_per_share: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** _verify_swap(market_id: field, side: field, collateral_amount: field, min_shares_out: field) */
+    _verify_swap: ((market_id: FieldLike, side: FieldLike, collateral_amount: FieldLike, min_shares_out: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** claim_winnings(market_id: field, fee_recipient: struct) */
-    claim_winnings: ((market_id: FieldLike, fee_recipient: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** buy_shares(market_id: field, side: field, collateral_amount: field, min_shares_out: field, price_per_share: field) */
+    buy_shares: ((market_id: FieldLike, side: FieldLike, collateral_amount: FieldLike, min_shares_out: FieldLike, price_per_share: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+
+    /** claim_winnings(market_id: field) */
+    claim_winnings: ((market_id: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** constructor(admin: struct, fee_recipient: struct) */
     constructor: ((admin: AztecAddressLike, fee_recipient: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -150,8 +150,8 @@ winnings: {
     /** is_paused() */
     is_paused: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** process_message(message_ciphertext: struct, message_context: struct) */
-    process_message: ((message_ciphertext: FieldLike[], message_context: { tx_hash: FieldLike, unique_note_hashes_in_tx: FieldLike[], first_nullifier_in_tx: FieldLike, recipient: AztecAddressLike }) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** offchain_receive(messages: struct) */
+    offchain_receive: ((messages: { ciphertext: FieldLike[], recipient: AztecAddressLike, tx_hash: OptionLike<FieldLike>, anchor_block_timestamp: (bigint | number) }[]) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** public_dispatch(selector: field) */
     public_dispatch: ((selector: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
@@ -165,8 +165,8 @@ winnings: {
     /** settle_winnings(market_id: field, winning_side: field, block_number: field) */
     settle_winnings: ((market_id: FieldLike, winning_side: FieldLike, block_number: FieldLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
-    /** sync_state() */
-    sync_state: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
+    /** sync_state(scope: struct) */
+    sync_state: ((scope: AztecAddressLike) => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;
 
     /** unpause() */
     unpause: (() => ContractFunctionInteraction) & Pick<ContractMethod, 'selector'>;

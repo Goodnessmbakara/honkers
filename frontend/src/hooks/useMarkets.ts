@@ -73,25 +73,23 @@ function toHex64(n: bigint): string {
 const AMM_SLOTS = { reserve_yes: 5n, reserve_no: 6n } as const;
 const SCALE = 1_000_000n;
 
-export async function fetchAmmPrices(ammAddr: string, marketId: bigint): Promise<{ yesPrice: number; noPrice: number; liquidity: number }> {
+export async function fetchAmmPrices(ammAddr: string, marketId: bigint): Promise<{ yesPrice: number; noPrice: number; liquidity: number; reserveYes: bigint; reserveNo: bigint }> {
   try {
     const [rySlot, rnSlot] = await Promise.all([
       mapSlot(AMM_SLOTS.reserve_yes, marketId),
       mapSlot(AMM_SLOTS.reserve_no, marketId),
     ]);
-    const [ryRaw, rnRaw] = await Promise.all([
+    const [ry, rn] = await Promise.all([
       readSlot(ammAddr, rySlot),
       readSlot(ammAddr, rnSlot),
     ]);
-    const ry = ryRaw;
-    const rn = rnRaw;
-    if (ry === 0n && rn === 0n) return { yesPrice: 0.5, noPrice: 0.5, liquidity: 0 };
+    if (ry === 0n && rn === 0n) return { yesPrice: 0.5, noPrice: 0.5, liquidity: 0, reserveYes: 0n, reserveNo: 0n };
     const total = ry + rn;
     const yesPrice = Number((rn * SCALE) / total) / Number(SCALE);
     const noPrice = Number((ry * SCALE) / total) / Number(SCALE);
-    return { yesPrice, noPrice, liquidity: Number(total) };
+    return { yesPrice, noPrice, liquidity: Number(total), reserveYes: ry, reserveNo: rn };
   } catch {
-    return { yesPrice: 0.5, noPrice: 0.5, liquidity: 0 };
+    return { yesPrice: 0.5, noPrice: 0.5, liquidity: 0, reserveYes: 0n, reserveNo: 0n };
   }
 }
 
@@ -293,6 +291,9 @@ export function useMarketDetail(marketId: number | null) {
   const [market, setMarket] = useState<MarketDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+
+  const refetch = useCallback(() => setTick((t) => t + 1), []);
 
   useEffect(() => {
     if (marketId === null) return;
@@ -369,9 +370,9 @@ export function useMarketDetail(marketId: number | null) {
     })();
 
     return () => { cancelled = true; };
-  }, [marketId]);
+  }, [marketId, tick]);
 
-  return { market, loading, error };
+  return { market, loading, error, refetch };
 }
 
 // ---------------------------------------------------------------------------

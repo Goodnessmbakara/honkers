@@ -7,16 +7,16 @@
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@aztec/accounts": "4.2.0",
-    "@aztec/aztec.js": "4.2.0",
-    "@aztec/cli-wallet": "4.2.0",
-    "@aztec/noir-contracts.js": "4.2.0",
-    "@aztec/pxe": "4.2.0",
-    "@aztec/stdlib": "4.2.0",
-    "@aztec/wallet-sdk": "4.2.0"
+    "@aztec/accounts": "4.2.0-aztecnr-rc.2",
+    "@aztec/aztec.js": "4.2.0-aztecnr-rc.2",
+    "@aztec/cli-wallet": "4.2.0-aztecnr-rc.2",
+    "@aztec/noir-contracts.js": "4.2.0-aztecnr-rc.2",
+    "@aztec/pxe": "4.2.0-aztecnr-rc.2",
+    "@aztec/stdlib": "4.2.0-aztecnr-rc.2",
+    "@aztec/wallet-sdk": "4.2.0-aztecnr-rc.2"
   },
   "devDependencies": {
-    "@aztec/aztec": "4.2.0",
+    "@aztec/aztec": "4.2.0-aztecnr-rc.2",
     "@types/node": "^22.0.0",
     "tsx": "^4.0.0",
     "typescript": "~5.7.0"

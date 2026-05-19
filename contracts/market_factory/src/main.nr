@@ -4,7 +4,7 @@ use aztec::macros::aztec;
 #[aztec]
 pub contract MarketFactory {
     use aztec::{
-        macros::{functions::{external, initializer}, storage::storage},
+        macros::{functions::{external, initializer}, storage::storage, events::event},
         protocol::{
             address::AztecAddress,
             abis::function_selector::FunctionSelector,
@@ -12,6 +12,7 @@ pub contract MarketFactory {
         },
         context::gas::GasOpts,
         state_vars::{Map, PublicMutable},
+        event::event_emission::emit_event_in_public,
     };
 
     // ---------------------------------------------------------------------------
@@ -19,8 +20,7 @@ pub contract MarketFactory {
     // Frontend reads via node_getPublicLogs to display question text.
     // Text fields are pre-packed by caller: each Field holds up to 31 UTF-8 bytes.
     // ---------------------------------------------------------------------------
-    #[abi(events)]
-    #[derive(Serialize)]
+    #[event]
     struct MarketCreated {
         market_id: Field,
         question_0: Field,
@@ -137,7 +137,7 @@ pub contract MarketFactory {
             GasOpts::default(),
         );
 
-        self.context.emit_public_log(MarketCreated {
+        emit_event_in_public(self.context, MarketCreated {
             market_id,
             question_0,
             question_1,

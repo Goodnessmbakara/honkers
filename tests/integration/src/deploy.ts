@@ -32,7 +32,7 @@ const NODE_URL = process.env.AZTEC_RPC_URL || "http://localhost:8080";
 // Use a deterministic admin secret so re-runs produce the same admin address
 const ADMIN_SECRET = Fr.fromHexString(
   process.env.ADMIN_SECRET ||
-    "0x2153536ff6628eee01cf4024889ff977a18d9fa61d0e414422f7681cf085c281"
+    "0x2a999eb7ba046327c31dd7945349bf64bbf80fe8dfc0402f48f01ae8246067a4"
 );
 
 async function main() {
@@ -119,16 +119,20 @@ async function main() {
 
   const sendOpts = { from: NO_FROM, fee: { paymentMethod } };
 
-  // Deploy the admin account contract if needed — check on-chain, not local PXE store
+  // Deploy the admin account contract if not already on-chain.
   if (await accountManager.hasInitializer()) {
-    const existing = await aztecNode.getContract(adminAddress);
-    if (!existing) {
-      console.log("  Deploying admin account contract...");
-      const deployMethod = await accountManager.getDeployMethod();
+    console.log("  Deploying admin account contract...");
+    const deployMethod = await accountManager.getDeployMethod();
+    try {
       await deployMethod.send(sendOpts);
       console.log("  Admin account deployed.");
-    } else {
-      console.log("  Admin account already deployed (on-chain).");
+    } catch (err: any) {
+      const msg = err?.message ?? err?.cause?.message ?? "";
+      if (msg.includes("Existing nullifier")) {
+        console.log("  Admin account already deployed (on-chain).");
+      } else {
+        throw err;
+      }
     }
   }
 
