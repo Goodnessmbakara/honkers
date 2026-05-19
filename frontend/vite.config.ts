@@ -144,6 +144,16 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('@aztec') || id.includes('bb.js') || id.includes('barretenberg')) {
+            return 'aztec-sdk';
+          }
+          return undefined;
+        },
+      },
+    },
     commonjsOptions: {
       // Force all @aztec/* to be treated as pure ESM — prevents dual CJS/ESM processing
       // that causes class identity errors and double-initialization of singletons.
